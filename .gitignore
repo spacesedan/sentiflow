@@ -1,0 +1,28 @@
+# Ignore Terraform local state files
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.backup
+
+# Ignore Terraform provider-related files
+.terraform/
+.terraform.lock.hcl
+
+# Ignore variables containing sensitive information
+*.tfvars
+*.tfvars.json
+
+# Ignore AWS credentials (if used)
+.aws/
+aws_access_keys.txt
+
+# Ignore logs & debugging files
+*.log
+*.out
+*.err
+
+# Ignore IDE-specific & system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
