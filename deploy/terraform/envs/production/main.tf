@@ -8,7 +8,6 @@ module "network" {
   vpc_cidr            = var.vpc_cidr
   public_subnet_cidr  = var.public_subnet_cidr
   private_subnet_cidr = var.private_subnet_cidr
-  # If your module sets up IGW, NAT, etc., pass those vars as needed
 }
 
 ########################################
@@ -46,43 +45,44 @@ resource "aws_security_group" "application_sg" {
 ########################################
 # Kafka Module (EC2 + SG for Kafka/Zookeeper)
 ########################################
-module "ec2_kafka" {
-  source = "../../modules/ec2_kafka"
+module "kafka" {
+  source = "../../modules/kafka"
 
   environment       = var.environment
-  vpc_id            = module.network.vpc_id
-  private_subnet_id = module.network.private_subnet_id
   instance_type     = var.kafka_instance_type
-  ssh_key_name      = var.ssh_key_name
+  key_name          = var.ssh_key_name
+  subnet_ids        = [module.network.private_subnet_id]
   application_sg_id = aws_security_group.application_sg.id
+  kafka_user_data   = file("scripts/kafka_userdata.sh")
+  vpc_id            = module.network.vpc_id
+
 }
+
 ########################################
 # Producer Module (Streams trending data to Kafka)
 ########################################
-module "ec2_producer" {
-  source = "../../modules/ec2_producer"
+module "producer" {
+  source = "../../modules/producer"
 
-  environment             = var.environment
-  vpc_id                  = module.network.vpc_id
-  private_subnet_id       = module.network.private_subnet_id
-  instance_type           = var.producer_instance_type
-  ssh_key_name            = var.ssh_key_name
-  kafka_bootstrap_servers = module.ec2_kafka.kafka_instance_private_dns
-  x_api_key               = var.x_api_key
+  environment        = var.environment
+  instance_type      = var.producer_instance_type
+  key_name           = var.ssh_key_name
+  subnet_ids         = [module.network.private_subnet_id]
+  producer_user_data = file("scripts/producer_userdata.sh")
+  vpc_id             = module.network.vpc_id
 
 }
 
 ########################################
 # ALB Module (for Kafka traffic over TCP)
 ########################################
-module "alb" {
-  source = "../../modules/alb"
+module "nlb" {
+  source = "../../modules/nlb"
 
   environment       = var.environment
   vpc_id            = module.network.vpc_id
   public_subnet_ids = [module.network.public_subnet_id]
   application_sg_id = aws_security_group.application_sg.id
-  kafka_instance_id = module.ec2_kafka.kafka_instance_id
 }
 
 ########################################
@@ -128,12 +128,8 @@ module "monitoring" {
   environment               = var.environment
   alert_email               = var.alert_email
   lambda_function_name      = module.lambda.lambda_function_name
-  kafka_instance_id         = module.ec2_kafka.kafka_instance_id
-  producer_instance_id      = module.ec2_producer.producer_instance_id
   lambda_log_retention_days = 14
   lambda_error_threshold    = 1
-  kafka_cpu_threshold       = 80
-  producer_cpu_threshold    = 80
 
 }
 
@@ -145,20 +141,10 @@ output "vpc_id" {
   value       = module.network.vpc_id
 }
 
-output "kafka_instance_id" {
-  description = "Kafka EC2 instance ID"
-  value       = module.ec2_kafka.kafka_instance_id
-}
 
-output "producer_instance_id" {
-  description = "Producer EC2 instance ID"
-  value       = module.ec2_producer.producer_instance_id
-
-}
-
-output "alb_dns_name" {
+output "nlb_dns_name" {
   description = "DNS name of the ALB"
-  value       = module.alb.alb_dns_name
+  value       = module.nlb.nlb_dns_name
 }
 
 output "lambda_function_arn" {
