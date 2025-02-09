@@ -46,16 +46,16 @@ module "iam" {
 # KAFKA MODULE
 # (EC2 Insstance + security group for Kafka + Zookeeper)
 ###############################################################################
-module "ec2_kafka" {
-  source = "../../modules/ec2_kafka"
-
-  vpc_id            = module.network.vpc_id
-  private_subnet_id = module.network.private_subnet_id
-  instance_type     = var.kafka_instance_type
-  environment       = var.environment
-  ssh_key_name      = var.ssh_key_name
-  application_sg_id = aws_security_group.application_sg.id
-}
+# module "ec2_kafka" {
+#   source = "../../modules/ec2_kafka"
+#
+#   vpc_id            = module.network.vpc_id
+#   private_subnet_id = module.network.private_subnet_id
+#   instance_type     = var.kafka_instance_type
+#   environment       = var.environment
+#   ssh_key_name      = var.ssh_key_name
+#   application_sg_id = aws_security_group.application_sg.id
+# }
 
 
 ###############################################################################
@@ -106,10 +106,10 @@ output "vpc_id" {
   value       = module.network.vpc_id
 }
 
-output "kafka_instance_id" {
-  description = "Kafka EC2 Instance ID"
-  value       = module.ec2_kafka.kafka_instance_id
-}
+# output "kafka_instance_id" {
+#   description = "Kafka EC2 Instance ID"
+#   value       = module.ec2_kafka.kafka_instance_id
+# }
 
 output "lambda_function_arn" {
   description = "The ARN of the Lambda function"

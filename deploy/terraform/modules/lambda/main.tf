@@ -1,7 +1,7 @@
 resource "aws_lambda_function" "sentiment_analysis" {
   function_name = "${var.environment}-sentiment-analysis"
   role          = var.iam_role_arn
-  handler       = "main" # For Go, typically "main"
+  handler       = "main"
   runtime       = "go1.x"
   filename      = var.lambda_package_path
   publish       = true

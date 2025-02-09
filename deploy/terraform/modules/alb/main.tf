@@ -11,21 +11,19 @@ resource "aws_security_group" "alb-sg" {
     # Best practice would be restricting this to only known IPs or subnets if possible
   }
 
-
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [var.application_sg_id]
   }
-
 }
 
 resource "aws_lb" "this" {
   name               = "${var.environment}-kafka-alb"
   load_balancer_type = "network"
   subnets            = var.public_subnet_ids
-  security_groups    = [var.alb_security_group_id]
+  security_groups    = [aws_security_group.alb-sg.id]
 }
 
 resource "aws_lb_target_group" "kafka_tg" {
