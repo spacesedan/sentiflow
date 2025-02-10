@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -39,6 +40,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(len(topics.Topics))
 	for _, t := range topics.Topics {
 		slog.Info("", slog.String("topic", t.Topic), slog.String("category", t.Category))
 	}

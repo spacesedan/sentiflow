@@ -14,7 +14,7 @@ import (
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func GenerateTopicsFromHeadlines(headlinesResponse *models.NewsAPITopHeadlinesResponse) (*models.OpenAITopicResponse, error) {
+func GenerateTopicsFromHeadlines(headlinesResponse []models.NewsAPITopHeadlinesResponse) (*models.OpenAITopicResponse, error) {
 	var topics models.OpenAITopicResponse
 
 	slog.Info("[TopicGenerator] Generating Topics from NewsAPI Top Headlines")
@@ -25,33 +25,34 @@ func GenerateTopicsFromHeadlines(headlinesResponse *models.NewsAPITopHeadlinesRe
 	}
 
 	prompt := `
-                    Extract key topics from the following JSON object containing news article titles.
+            Extract key topics from the following JSON object containing news article titles.
 
-                    🔹 **Rules:**
-                    - Condense each topic into a **short, precise phrase** that can be used as a search query.
-                    - Ensure topics are **general enough** to be searched across different APIs.
-                    - Categorize each topic into one of the following categories:
-                    - **Technology**
-                    - **Business & Finance**
-                    - **Politics & World Affairs**
-                    - **Entertainment & Pop Culture**
-                    - **Health & Science**
-                    - **Sports**
-                    - **Lifestyle & Society**
-                    - **Memes & Internet Trends**
-                    - **Crime & Law**
+            🔹 **Rules:**
+            - Deduplicate similar topics so that each topic appears only once.
+            - Condense each topic into a **short, precise phrase** that can be used as a search query.
+            - Ensure topics are **general enough** to be searched across different APIs.
+            - Categorize each topic into one of the following categories:
+            - **Technology**
+            - **Business & Finance**
+            - **Politics & World Affairs**
+            - **Entertainment & Pop Culture**
+            - **Health & Science**
+            - **Sports**
+            - **Lifestyle & Society**
+            - **Memes & Internet Trends**
+            - **Crime & Law**
 
-                    🔹 **Return JSON Output Format:**
-                    using the following structure:
-                    {
-                        "topics" : [
-                            {
-                                "topic" : "XXX",
-                                "category": "XXX"
-                            }
-                        ]
-                    }
-                    `
+            🔹 **Return JSON Output Format:**
+
+            {
+            "topics": [
+                {
+                "topic": "XXX",
+                "category": "XXX"
+                }
+            ]
+            }
+`
 
 	start := time.Now()
 	chatComplettion, err := clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),

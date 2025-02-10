@@ -10,7 +10,7 @@ import (
 
 func InitLogger() {
 	handler := tint.NewHandler(os.Stdout, &tint.Options{
-		Level:      slog.LevelInfo,
+		Level:      slog.LevelDebug,
 		TimeFormat: time.Kitchen,
 		AddSource:  true,
 	})

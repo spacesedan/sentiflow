@@ -40,86 +40,125 @@ func GetNewsAPIClient() *NewsAPIClient {
 	return newsAPIInstance
 }
 
-func (n NewsAPIClient) GetTopHeadlines() (*models.NewsAPITopHeadlinesResponse, error) {
+func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPITopHeadlinesResponse, error) {
 	if n.APIKey == "" {
 		slog.Error("[NewsAPIClient] API key is missing")
 		return nil, errors.New("[NewsAPIClient] API key is missing")
 	}
-	url := NEWS_API_ENDPOINT + n.APIKey
 
-	var response *models.NewsAPITopHeadlinesResponse
-	var lastErr error
+	var responses []models.NewsAPITopHeadlinesResponse
+	categories := []string{
+		"business", "entertainment", "general",
+		"health", "science", "sports", "technology",
+	}
+
+	for _, category := range categories {
+		slog.Info("[NewsAPIClient] Fetching headlines", slog.String("category", category))
+
+		response, err := n.fetchCategoryHeadlines(category)
+		if err != nil {
+			slog.Warn("[NewsAPIClient] Skipping category due to repeated failures",
+				slog.String("category", category), slog.String("error", err.Error()))
+			continue
+		}
+
+		slog.Debug("[NewsAPIClient] Number of headlines in this request",
+			slog.Int("headlines", len(response.Articles)), slog.String("category", category))
+		responses = append(responses, *response)
+	}
+
+	if len(responses) == 0 {
+		return []models.NewsAPITopHeadlinesResponse{}, errors.New("[NewsAPIClient] No results fetched")
+	}
+	return responses, nil
+}
+
+// fetchCategoryHeadlines fetches headlines for a single category with retries
+func (n NewsAPIClient) fetchCategoryHeadlines(category string) (*models.NewsAPITopHeadlinesResponse, error) {
+	url := NEWS_API_ENDPOINT + n.APIKey + "&category=" + category
 	backoff := INITIAL_BACKOFF
 
 	for attempt := 1; attempt <= MAX_RETRIES; attempt++ {
-		slog.Info("[NewsAPIClient] Fetching top headlines", slog.Int("attempt", attempt))
+		slog.Info("[NewsAPIClient] Attempting request", slog.String("category", category), slog.Int("attempt", attempt))
+
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
+			slog.Error("[NewsAPIClient] Failed to create request", slog.String("error", err.Error()))
 			return nil, err
 		}
 
 		res, err := n.Client.Do(req)
 		if err != nil {
-			slog.Error("[NewsAPIClient] failed to create request", slog.String("error", err.Error()))
-			lastErr = err
-		} else {
-			defer res.Body.Close()
-
-			switch res.StatusCode {
-			case http.StatusOK:
-				body, err := io.ReadAll(res.Body)
-				if err != nil {
-					slog.Error("[NewsAPIClient] Failed to read response body", slog.String("error", err.Error()))
-					return nil, err
-				}
-				err = json.Unmarshal(body, &response)
-				if err != nil {
-					slog.Error("[NewsAPIClient] Failed to parse JSON repsonse", slog.String("error", err.Error()))
-					return nil, err
-				}
-
-				slog.Info("[NewsAPIClient] Successfully fetched headlines")
-				return response, nil
-			case http.StatusBadRequest:
-				slog.Warn("[NewsAPIClient] Bad request: check query parameters")
-				return nil, errors.New("[NewsAPIClient] Bad request: check query parameters")
-			case http.StatusUnauthorized:
-				slog.Error("[NewsAPIClient] Invalid API Key, check credentials")
-				return nil, errors.New("[NewsAPIClient] Invalid API Key, check credentials")
-			case http.StatusTooManyRequests:
-				slog.Warn("[NewsAPIClient] Rate limit exceeded, retrying...",
-					slog.Duration("backoff", backoff), slog.Int("attempt", attempt))
-				_, err = io.Copy(io.Discard, res.Body)
-				if err != nil {
-					slog.Error("[NewsAPIClient] Failed to reade response body", slog.String("error", err.Error()))
-					return nil, err
-				}
+			slog.Error("[NewsAPIClient] Request failed", slog.String("error", err.Error()))
+			if attempt < MAX_RETRIES {
 				time.Sleep(backoff)
 				backoff *= 2
 				if backoff > MAX_BACKOFF {
 					backoff = MAX_BACKOFF
 				}
-			case http.StatusForbidden:
-				slog.Error("[NewsAPIClient] Access forbidden, check API key permissions")
-				return nil, errors.New("[NewsAPIClient] API key lacks required permissions")
-			case http.StatusInternalServerError:
-				slog.Warn("[NewsAPIClient] Server Error", slog.Int("statusCode", res.StatusCode),
-					slog.Duration("backoff", backoff), slog.Int("attempt", attempt))
-				time.Sleep(backoff)
-				backoff *= 2
-				if backoff > MAX_BACKOFF {
-					backoff = MAX_BACKOFF
-				}
-			default:
-				slog.Warn("[NewsAPIClient] Unexpected Response")
-				return nil, errors.New("[NewsAPI] Unexpected stats code")
 			}
+			continue
 		}
-		if attempt == MAX_RETRIES {
-			slog.Error("[NewsAPIClient] Failed after max retries")
-			lastErr = errors.New("[NewsAPIClient] failed after max retries")
-			break
+		defer res.Body.Close()
+
+		// Read response body
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			slog.Error("[NewsAPIClient] Failed to read response body", slog.String("error", err.Error()))
+			return nil, err
+		}
+
+		switch res.StatusCode {
+		case http.StatusOK:
+			var response models.NewsAPITopHeadlinesResponse
+			err = json.Unmarshal(body, &response)
+			if err != nil {
+				slog.Error("[NewsAPIClient] Failed to parse JSON", slog.String("error", err.Error()))
+				return nil, err
+			}
+			slog.Info("[NewsAPIClient] Successfully fetched headlines", slog.String("category", category))
+			return &response, nil
+
+		case http.StatusBadRequest:
+			return nil, errors.New("[NewsAPIClient] Bad request, check query parameters")
+
+		case http.StatusUnauthorized:
+			return nil, errors.New("[NewsAPIClient] Invalid API Key, check credentials")
+
+		case http.StatusTooManyRequests:
+			slog.Warn("[NewsAPIClient] Rate limit exceeded, retrying...",
+				slog.Duration("backoff", backoff), slog.Int("attempt", attempt))
+			if attempt < MAX_RETRIES {
+				time.Sleep(backoff)
+				backoff *= 2
+				if backoff > MAX_BACKOFF {
+					backoff = MAX_BACKOFF
+				}
+			}
+			continue
+
+		case http.StatusForbidden:
+			return nil, errors.New("[NewsAPIClient] API key lacks required permissions")
+
+		case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			slog.Warn("[NewsAPIClient] Server error, retrying...",
+				slog.Int("statusCode", res.StatusCode), slog.Duration("backoff", backoff), slog.Int("attempt", attempt))
+			if attempt < MAX_RETRIES {
+				time.Sleep(backoff)
+				backoff *= 2
+				if backoff > MAX_BACKOFF {
+					backoff = MAX_BACKOFF
+				}
+			}
+			continue
+
+		default:
+			slog.Warn("[NewsAPIClient] Unexpected response",
+				slog.String("category", category), slog.Int("statusCode", res.StatusCode))
+			return nil, errors.New("[NewsAPIClient] Unexpected status code")
 		}
 	}
-	return nil, lastErr
+
+	slog.Error("[NewsAPIClient] Failed after max retries", slog.String("category", category))
+	return nil, errors.New("[NewsAPIClient] Failed after max retries")
 }
