@@ -38,7 +38,8 @@ type NewsAPIArticles = struct {
 
 type OpenAITopicResponse = struct {
 	Topics []struct {
-		Topic string `json:"topic"`
+		Topic    string `json:"topic"`
+		Category string `json:"category"`
 	} `json:"topics"`
 }
 
@@ -90,10 +91,34 @@ func main() {
 		openai.ChatCompletionNewParams{
 			Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 				openai.SystemMessage(`
-                    generate a list of topics using the 'title' of the following json object
-                    and return the list as a json array named 'topics' with an object of 'topic' followed by the topic.
-                    can you condense the topic as much as possile so that i can use the result as a query in other apis
+                    Extract key topics from the following JSON object containing news article titles.
+
+                    🔹 **Rules:**
+                    - Condense each topic into a **short, precise phrase** that can be used as a search query.
+                    - Ensure topics are **general enough** to be searched across different APIs.
+                    - Categorize each topic into one of the following categories:
+                    - **Technology**
+                    - **Business & Finance**
+                    - **Politics & World Affairs**
+                    - **Entertainment & Pop Culture**
+                    - **Health & Science**
+                    - **Sports**
+                    - **Lifestyle & Society**
+                    - **Memes & Internet Trends**
+                    - **Crime & Law**
+
+                    🔹 **Return JSON Output Format:**
+                    using the following structure:
+                    {
+                        "topics" : [
+                            {
+                                "topic" : "XXX",
+                                "category": "XXX"
+                            }
+                        ]
+                    }
                     `),
+
 				openai.UserMessage(stringRepsonse),
 			}),
 			Model: openai.F(openai.ChatModelChatgpt4oLatest),
@@ -106,6 +131,8 @@ func main() {
 	topicsRaw = strings.TrimPrefix(topicsRaw, "```json")
 	topicsRaw = strings.TrimSuffix(topicsRaw, "```")
 
+	fmt.Println(topicsRaw)
+
 	topics := OpenAITopicResponse{}
 
 	err = json.Unmarshal([]byte(topicsRaw), &topics)
@@ -114,7 +141,7 @@ func main() {
 	}
 
 	for _, topic := range topics.Topics {
-		fmt.Println(topic.Topic)
+		fmt.Printf("Topic: %v Category: %v\n", topic.Topic, topic.Category)
 	}
 }
 
