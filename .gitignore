@@ -27,6 +27,7 @@ bin/
 vendor/
 
 .env
+config/envs/.env*
 
 #
 # Terraform Specific

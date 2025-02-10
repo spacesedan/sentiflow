@@ -11,7 +11,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/subosito/gotenv"
+	"github.com/spacesedan/sentiflow/config"
 )
 
 const (
@@ -48,9 +48,11 @@ func main() {
 		debug: true,
 	}
 
-	if err := LoadEnvironment(); err != nil {
-		panic(err)
+	env := os.Getenv("APP_ENV")
+	if env == "" {
+		env = "dev"
 	}
+	config.LoadEnv(env)
 
 	client := &http.Client{}
 
@@ -151,8 +153,4 @@ func OpenAIClient() *openai.Client {
 	)
 
 	return client
-}
-
-func LoadEnvironment() error {
-	return gotenv.Load()
 }
