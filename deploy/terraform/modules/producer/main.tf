@@ -10,7 +10,7 @@ data "aws_ami" "producer_ami" {
 
 resource "aws_security_group" "producer_sg" {
   name   = "${var.environment}-producer-sg"
-  vpc_id = module.network.vpc_id
+  vpc_id = var.vpc_id
 
   ingress {
     from_port   = 80
@@ -41,15 +41,16 @@ resource "aws_launch_template" "producer_lt" {
 }
 
 module "producer_autoscaling" {
-  source = "../autoscaling"
+  source = "../../modules/autoscaling/"
 
+  autoscaling_group_name  = "producer-${var.environment}-autoscaling"
   environment             = var.environment
   launch_template_id      = aws_launch_template.producer_lt.id
   launch_template_version = "$Latest"
   subnet_ids              = var.subnet_ids
   min_size                = 1
   max_size                = 2
-  desired_capacity        = 2
+  desired_capacity        = 1
 
   asg_tags = {
     "Environment" = var.environment

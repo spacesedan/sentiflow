@@ -6,10 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/subosito/gotenv"
+)
+
+const (
+	NEWS_API_ENDPOINT = "https://newsapi.org/v2/top-headlines?country=us&pageSize=100&apiKey="
 )
 
 type ProducerConfig = struct {
@@ -41,11 +47,17 @@ func main() {
 		debug: true,
 	}
 
+	if err := LoadEnvironment(); err != nil {
+		panic(err)
+	}
+
 	client := &http.Client{}
+
+	url := NEWS_API_ENDPOINT + os.Getenv("NEWS_API_KEY")
 
 	req, err := http.NewRequest(
 		http.MethodGet,
-		"",
+		url,
 		nil,
 	)
 	if err != nil {
@@ -108,8 +120,12 @@ func main() {
 
 func OpenAIClient() *openai.Client {
 	client := openai.NewClient(
-		option.WithAPIKey(""),
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
 	)
 
 	return client
+}
+
+func LoadEnvironment() error {
+	return gotenv.Load()
 }

@@ -4,6 +4,11 @@ variable "environment" {
   type        = string
 }
 
+variable "autoscaling_group_name" {
+  description = "Name for the Autoscaling Group"
+  type        = string
+}
+
 variable "launch_template_id" {
   description = "The ID of the launch template to use for the ASG."
   type        = string

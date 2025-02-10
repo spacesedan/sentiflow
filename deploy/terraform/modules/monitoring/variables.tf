@@ -14,16 +14,6 @@ variable "lambda_function_name" {
   type        = string
 }
 
-variable "kafka_instance_id" {
-  description = "The EC2 instance ID for the Kafka broker"
-  type        = string
-}
-
-variable "producer_instance_id" {
-  description = "The EC2 instance ID for the Producer broker"
-  type        = string
-
-}
 
 variable "lambda_log_retention_days" {
   description = "Number of days to retain the Lambda log group"
@@ -37,14 +27,3 @@ variable "lambda_error_threshold" {
   default     = 1
 }
 
-variable "kafka_cpu_threshold" {
-  description = "CPU utlization threshold (in percent) for the Kafka EC2 instance alarm"
-  type        = number
-  default     = 80
-}
-
-variable "producer_cpu_threshold" {
-  description = "CPU utlization threshold (in percent) for the Producer EC2 instance alarm"
-  type        = number
-  default     = 80
-}

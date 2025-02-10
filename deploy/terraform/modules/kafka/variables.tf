@@ -25,6 +25,12 @@ variable "subnet_ids" {
   type        = list(string)
 }
 
+variable "vpc_id" {
+  description = "ID of the VPC"
+  type        = string
+
+}
+
 variable "kafka_user_data" {
   description = "User data script for the Kafka broker"
   type        = string

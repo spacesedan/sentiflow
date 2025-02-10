@@ -62,7 +62,8 @@ resource "aws_launch_template" "kafka_lt" {
 
 # Call the autoscaling module for Kafka (for demo, typically desired_capacity might be 1)
 module "kafka_autoscaling" {
-  source                  = "../modules/autoscaling"
+  source                  = "../../modules/autoscaling"
+  autoscaling_group_name  = "kafka-${var.environment}-autoscaling"
   environment             = var.environment
   launch_template_id      = aws_launch_template.kafka_lt.id
   launch_template_version = "$Latest"
@@ -86,7 +87,3 @@ module "kafka_autoscaling" {
   cooldown              = 300
 }
 
-output "kafka_asg_name" {
-  description = "The name of the Auto Scaling Group for the Kafka broker"
-  value       = module.kafka_autoscaling.asg_name
-}

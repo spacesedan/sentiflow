@@ -18,7 +18,5 @@ variable "public_subnet_ids" {
   description = "List of public subnet IDs for the ALB."
 }
 
-variable "kafka_instance_id" {
-  type        = string
-  description = "EC2 Instance ID for Kafka."
-}
+
+

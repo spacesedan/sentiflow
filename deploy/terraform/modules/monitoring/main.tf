@@ -30,36 +30,3 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors_alarm" {
   alarm_actions = [aws_sns_topic.alerts_topic.arn]
 }
 
-resource "aws_cloudwatch_metric_alarm" "kafka_cpu_alarm" {
-  alarm_name          = "${var.environment}-kafka-cpu-high"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.kafka_cpu_threshold
-  alarm_description   = "Alarm when Kafka EC2 instance CPU utilization exceeps threshold"
-  dimensions = {
-    InstanceId = var.kafka_instance_id
-  }
-
-  alarm_actions = [aws_sns_topic.alerts_topic.arn]
-}
-
-resource "aws_cloudwatch_metric_alarm" "producer_cpu_alarm" {
-  alarm_name          = "${var.environment}-kafka-cpu-high"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.producer_instance_id
-  alarm_description   = "Alarm when Kafka EC2 instance CPU utilization exceeps threshold"
-  dimensions = {
-    InstanceId = var.producer_instance_id
-  }
-
-  alarm_actions = [aws_sns_topic.alerts_topic.arn]
-}

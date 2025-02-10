@@ -19,6 +19,11 @@ variable "subnet_ids" {
   type        = list(string)
 }
 
+variable "vpc_id" {
+  description = "ID of the VPC"
+  type        = string
+}
+
 variable "producer_user_data" {
   description = "Userdata script for the tweet producer"
   type        = string

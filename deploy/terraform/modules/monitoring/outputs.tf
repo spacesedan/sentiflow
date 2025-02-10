@@ -8,7 +8,3 @@ output "lambda_errors_alarm_arn" {
   value       = aws_cloudwatch_metric_alarm.lambda_errors_alarm.arn
 }
 
-output "kafka_cpu_alarm_arn" {
-  description = "The ARN of the Kafka CPU alarm"
-  value       = aws_cloudwatch_metric_alarm.kafka_cpu_alarm.arn
-}

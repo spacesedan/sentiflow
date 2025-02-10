@@ -45,8 +45,3 @@ resource "aws_lb_listener" "kafka_listener" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "kafka_tg_attachment" {
-  target_group_arn = aws_lb_target_group.kafka_tg.arn
-  target_id        = var.kafka_instance_id
-  port             = 9092
-}

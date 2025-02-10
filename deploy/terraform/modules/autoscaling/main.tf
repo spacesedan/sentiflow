@@ -2,7 +2,7 @@
 # Auto Scaling Group (ASG)
 ########################################
 resource "aws_autoscaling_group" "this" {
-  name                = "${var.environment}-asg"
+  name                = var.autoscaling_group_name
   vpc_zone_identifier = var.subnet_ids
   min_size            = var.min_size
   max_size            = var.max_size
@@ -16,8 +16,8 @@ resource "aws_autoscaling_group" "this" {
   dynamic "tag" {
     for_each = var.asg_tags
     content {
-      key                 = each.key
-      value               = each.value
+      key                 = tag.key
+      value               = tag.value
       propagate_at_launch = true
     }
   }
