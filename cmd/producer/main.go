@@ -18,13 +18,6 @@ type ProducerConfig = struct {
 	debug bool
 }
 
-type OpenAITopicResponse = struct {
-	Topics []struct {
-		Topic    string `json:"topic"`
-		Category string `json:"category"`
-	} `json:"topics"`
-}
-
 func main() {
 	_ = ProducerConfig{
 		debug: true,
