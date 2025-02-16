@@ -61,7 +61,8 @@ func GenerateTopicsFromHeadlines(headlinesResponse []models.NewsAPITopHeadlinesR
 				openai.SystemMessage(prompt),
 				openai.UserMessage(string(jsonBytes)),
 			}),
-			Model: openai.F(openai.ChatModelChatgpt4oLatest),
+			Model:       openai.F(openai.ChatModelGPT3_5Turbo),
+			Temperature: openai.Float(0.5),
 		})
 	elapsed := time.Since(start)
 	if err != nil {

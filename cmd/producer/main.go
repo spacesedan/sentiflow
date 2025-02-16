@@ -11,10 +11,6 @@ import (
 	"github.com/spacesedan/sentiflow/internal/processing"
 )
 
-const (
-	NEWS_API_ENDPOINT = "https://newsapi.org/v2/top-headlines?country=us&pageSize=100&apiKey="
-)
-
 type ProducerConfig = struct {
 	debug bool
 }
@@ -43,5 +39,10 @@ func main() {
 	fmt.Println(len(topics.Topics))
 	for _, t := range topics.Topics {
 		slog.Info("", slog.String("topic", t.Topic), slog.String("category", t.Category))
+	}
+
+	_, err = clients.GetRedditClient().FetchSubredditPosts("technology", "tesla")
+	if err != nil {
+		panic(err)
 	}
 }
