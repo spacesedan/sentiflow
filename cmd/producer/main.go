@@ -7,6 +7,7 @@ import (
 
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
+	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/logging"
 	"github.com/spacesedan/sentiflow/internal/processing"
 )
@@ -26,6 +27,12 @@ func main() {
 	}
 	config.LoadEnv(env)
 	logging.InitLogger()
+
+	err := db.InitDB()
+	if err != nil {
+		panic(err)
+	}
+	defer db.CloseDB()
 
 	topHeadlines, err := clients.GetNewsAPIClient().GetTopHeadlines()
 	if err != nil {

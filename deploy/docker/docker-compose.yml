@@ -1,0 +1,154 @@
+services:
+  # ---------------------------------------------------
+  # Zookeeper
+  # ---------------------------------------------------
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+    ports:
+      - "2181:2181"
+    # volumes: # Optional: Persist data if you need it
+    #   - zookeeper_data:/bitnami/zookeeper
+
+  # ---------------------------------------------------
+  # Kafka
+  # ---------------------------------------------------
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      # For local dev, advertise Kafka as "kafka:9092" so other containers can reach it
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      # Optional: If you want to disable authentication
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    ports:
+      - "9092:9092"
+    # volumes: # Optional: Persist data if you need it
+    #   - kafka_data:/bitnami/kafka
+
+  # ---------------------------------------------------
+  # DynamoDB Local
+  # ---------------------------------------------------
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb_local
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
+    # If you want it persisted, remove '-inMemory' and mount a volume:
+    # volumes:
+    #   - dynamodb_data:/home/dynamodblocal/data
+
+  # ---------------------------------------------------
+  # PostgreSQL
+  # ---------------------------------------------------
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ../../migrations:/migrations
+
+
+  # ---------------------------------------------------
+  # Go Producer Service
+  # ---------------------------------------------------
+  # producer_service:
+  #   # Adjust 'build' to point to your producer code (e.g. `./producer` if separate directory).
+  #   # If your Dockerfile is at the project root, keep `build: .` but ensure the Dockerfile references your producer code.
+  #   build: .
+  #   container_name: go_producer
+  #   depends_on:
+  #     - kafka
+  #     - db
+  #     - dynamodb
+  #   environment:
+  #     # Connection info for Kafka
+  #     - KAFKA_BROKER=kafka:9092
+  #
+  #     # Connection info for Postgres
+  #     - DB_HOST=db
+  #     - DB_PORT=5432
+  #     - DB_USER=myuser
+  #     - DB_PASSWORD=mypassword
+  #     - DB_NAME=mydb
+  #
+  #     # Connection info for DynamoDB local
+  #     - DYNAMODB_ENDPOINT=http://dynamodb:8000
+  #
+  #   command: >
+  #     sh -c "go run cmd/producer/main.go"
+  #     # Adjust to your actual producer entrypoint
+  #
+  #   ports:
+  #     - "8080:8080"
+  #
+  # # ---------------------------------------------------
+  # # Go Sentiment Analysis Service
+  # # ---------------------------------------------------
+  # sentiment_analysis_service:
+  #   # Same idea: Adjust build context & Dockerfile as needed
+  #   build: .
+  #   container_name: go_sentiment_analysis
+  #   depends_on:
+  #     - kafka
+  #     - db
+  #     - dynamodb
+  #   environment:
+  #     # Kafka
+  #     - KAFKA_BROKER=kafka:9092
+  #
+  #     # Postgres
+  #     - DB_HOST=db
+  #     - DB_PORT=5432
+  #     - DB_USER=myuser
+  #     - DB_PASSWORD=mypassword
+  #     - DB_NAME=mydb
+  #
+  #     # DynamoDB
+  #     - DYNAMODB_ENDPOINT=http://dynamodb:8000
+  #
+  #   command: >
+  #     sh -c "go run cmd/sentiment/main.go"
+  #     # Adjust to your actual sentiment analysis entrypoint
+  #
+  #   ports:
+  #     - "8081:8081"
+  #
+  # ---------------------------------------------------
+  # Grafana (Optional)
+  # ---------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - db
+      # If you have a metrics pipeline that needs Kafka or these services, add them here
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      # If you need a default user/password
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  db_data:
+  grafana_data:
+  # zookeeper_data:
+  # kafka_data:
+  # dynamodb_data:
