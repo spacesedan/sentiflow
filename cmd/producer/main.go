@@ -1,9 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
@@ -12,14 +15,12 @@ import (
 	"github.com/spacesedan/sentiflow/internal/processing"
 )
 
-type ProducerConfig = struct {
+type ProducerConfig struct {
 	debug bool
 }
 
 func main() {
-	_ = ProducerConfig{
-		debug: true,
-	}
+	_ = ProducerConfig{debug: true}
 
 	env := os.Getenv("APP_ENV")
 	if env == "" {
@@ -34,22 +35,49 @@ func main() {
 	}
 	defer db.CloseDB()
 
-	topHeadlines, err := clients.GetNewsAPIClient().GetTopHeadlines()
+	err = clients.InitKafka()
 	if err != nil {
 		panic(err)
+	}
+	defer clients.CloseKafka()
+
+	// ✅ Load intervals from environment
+	topicFetchInterval, err := strconv.Atoi(os.Getenv("TOPIC_FETCH_INTERVAL"))
+	if err != nil {
+		topicFetchInterval = 21600 // Default to 6 hours (in seconds)
 	}
 
-	topics, err := processing.GenerateTopicsFromHeadlines(topHeadlines)
+	redditFetchInterval, err := strconv.Atoi(os.Getenv("REDDIT_FETCH_INTERVAL"))
 	if err != nil {
-		panic(err)
-	}
-	fmt.Println(len(topics.Topics))
-	for _, t := range topics.Topics {
-		slog.Info("", slog.String("topic", t.Topic), slog.String("category", t.Category))
+		redditFetchInterval = 900 // Default to 15 minutes (in seconds)
 	}
 
-	_, err = clients.GetRedditClient().FetchSubredditPosts("technology", "tesla")
-	if err != nil {
-		panic(err)
+	topicTicker := time.NewTicker(time.Duration(topicFetchInterval) * time.Second)
+	redditTicker := time.NewTicker(time.Duration(redditFetchInterval) * time.Second)
+	defer topicTicker.Stop()
+	defer redditTicker.Stop()
+
+	// ✅ Run both fetchers immediately
+	go func() {
+		processing.FetchAndStoreTopics()
+		processing.FetchRedditContentForTopics()
+	}()
+
+	// Handle graceful shutdown
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	for {
+		select {
+		case <-topicTicker.C:
+			go processing.FetchAndStoreTopics()
+
+		case <-redditTicker.C:
+			go processing.FetchRedditContentForTopics()
+
+		case <-stopChan:
+			slog.Info("🔄 Shutting down producer gracefully...")
+			return
+		}
 	}
 }

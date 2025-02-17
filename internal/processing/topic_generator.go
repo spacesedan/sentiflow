@@ -11,6 +11,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/spacesedan/sentiflow/internal/clients"
+	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
@@ -24,35 +25,58 @@ func GenerateTopicsFromHeadlines(headlinesResponse []models.NewsAPITopHeadlinesR
 		return nil, fmt.Errorf("[TopicGenerator] Failed to marshal NewsAPI headlines: %w", err)
 	}
 
-	prompt := `
-            Extract key topics from the following JSON object containing news article titles.
+	ctx := context.Background()
+	recentHeadlines, err := db.GetRecentHeadlines(ctx)
+	if err != nil {
+		slog.Error("[TopicGenerator] Failed to fetch recent healines", slog.String("error", err.Error()))
+	}
 
-            🔹 **Rules:**
-            - Deduplicate similar topics so that each topic appears only once.
-            - Condense each topic into a **short, precise phrase** that can be used as a search query.
-            - Ensure topics are **general enough** to be searched across different APIs.
-            - Categorize each topic into one of the following categories:
-            - **Technology**
-            - **Business & Finance**
-            - **Politics & World Affairs**
-            - **Entertainment & Pop Culture**
-            - **Health & Science**
-            - **Sports**
-            - **Lifestyle & Society**
-            - **Memes & Internet Trends**
-            - **Crime & Law**
+	recentHeadlinesStr := `
+    - The following headlines have already been processed. If a new headline matches any of these, DO NOT generate a topic for it:
+    `
+	if len(recentHeadlines) > 0 {
+		recentHeadlinesStr += "- " + strings.Join(recentHeadlines, "\n- ")
+	} else {
+		recentHeadlinesStr += "None"
+	}
 
-            🔹 **Return JSON Output Format:**
+	prompt := fmt.Sprintf(`
+    Extract key topics from the following JSON object containing news article titles.
 
+    🔹 **Rules:**
+    - Condense each topic into a **short, precise phrase** that can be used as a search query.
+    - Ensure topics are **general enough** to be searched across different APIs.
+    - Categorize each topic into one of the following categories:
+        - **Technology**
+        - **Business & Finance**
+        - **Politics & World Affairs**
+        - **Entertainment & Pop Culture**
+        - **Health & Science**
+        - **Sports**
+        - **Lifestyle & Society**
+        - **Memes & Internet Trends**
+        - **Crime & Law**
+    - Include the original title of the headline in "original_headline".
+    
+    ⚠️ **IMPORTANT:**  
+    - If a headline appears in the **"Previously Processed Headlines"** section below, **DO NOT** generate a topic for it.  
+    - This means you MUST check every new headline against the list below.  
+    - If a new headline is even slightly similar, SKIP IT.
+
+    %s
+
+    🔹 **Return JSON Output Format:**
+    using the following structure:
+    {
+        "topics" : [
             {
-            "topics": [
-                {
-                "topic": "XXX",
-                "category": "XXX"
-                }
-            ]
+                "topic" : "XXX",
+                "category" : "XXX",
+                "original_headline" : "XXX"
             }
-`
+        ]
+    }
+`, recentHeadlinesStr)
 
 	start := time.Now()
 	chatComplettion, err := clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),
@@ -84,6 +108,7 @@ func GenerateTopicsFromHeadlines(headlinesResponse []models.NewsAPITopHeadlinesR
 	topicsRaw = strings.TrimPrefix(topicsRaw, "```json")
 	topicsRaw = strings.TrimSuffix(topicsRaw, "```")
 	topicsRaw = strings.TrimSpace(topicsRaw)
+	slog.Debug("[TopicGenerator] Raw OpenAI Response", slog.String("topicsRaw", topicsRaw))
 
 	err = json.Unmarshal([]byte(topicsRaw), &topics)
 	if err != nil {
