@@ -10,7 +10,6 @@ import (
 
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
-	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/logging"
 	"github.com/spacesedan/sentiflow/internal/processing"
 )
@@ -29,13 +28,7 @@ func main() {
 	config.LoadEnv(env)
 	logging.InitLogger()
 
-	err := db.InitDB()
-	if err != nil {
-		panic(err)
-	}
-	defer db.CloseDB()
-
-	err = clients.InitKafka()
+	err := clients.InitKafka()
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +42,7 @@ func main() {
 
 	redditFetchInterval, err := strconv.Atoi(os.Getenv("REDDIT_FETCH_INTERVAL"))
 	if err != nil {
-		redditFetchInterval = 900 // Default to 15 minutes (in seconds)
+		redditFetchInterval = 1800 // Default to 30 minutes (in seconds)
 	}
 
 	topicTicker := time.NewTicker(time.Duration(topicFetchInterval) * time.Second)

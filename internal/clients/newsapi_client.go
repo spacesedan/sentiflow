@@ -40,13 +40,13 @@ func GetNewsAPIClient() *NewsAPIClient {
 	return newsAPIInstance
 }
 
-func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPITopHeadlinesResponse, error) {
+func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPIArticles, error) {
 	if n.APIKey == "" {
 		slog.Error("[NewsAPIClient] API key is missing")
 		return nil, errors.New("[NewsAPIClient] API key is missing")
 	}
 
-	var responses []models.NewsAPITopHeadlinesResponse
+	var responses []models.NewsAPIArticles
 	categories := []string{
 		"business", "entertainment", "general",
 		"health", "science", "sports", "technology",
@@ -64,11 +64,11 @@ func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPITopHeadlinesResponse, 
 
 		slog.Debug("[NewsAPIClient] Number of headlines in this request",
 			slog.Int("headlines", len(response.Articles)), slog.String("category", category))
-		responses = append(responses, *response)
+		responses = append(responses, response.Articles...)
 	}
 
 	if len(responses) == 0 {
-		return []models.NewsAPITopHeadlinesResponse{}, errors.New("[NewsAPIClient] No results fetched")
+		return nil, errors.New("[NewsAPIClient] No results fetched")
 	}
 	return responses, nil
 }

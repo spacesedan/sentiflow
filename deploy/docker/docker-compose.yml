@@ -43,11 +43,13 @@ services:
   # DynamoDB Local
   # ---------------------------------------------------
   dynamodb:
-    image: amazon/dynamodb-local:latest
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    image: "amazon/dynamodb-local:latest"
     container_name: dynamodb_local
     ports:
       - "8000:8000"
-    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
+    volumes:
+      - "./dynamodb:/home/dynamodblocal/data"
 
   # ---------------------------------------------------
   # PostgreSQL

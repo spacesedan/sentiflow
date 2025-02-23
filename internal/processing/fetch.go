@@ -1,7 +1,7 @@
 package processing
 
 import (
-	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -25,6 +25,8 @@ func FetchAndStoreTopics() {
 			continue
 		}
 
+		fmt.Println(len(headlines))
+
 		topics, err := GenerateTopicsFromHeadlines(headlines)
 		if err != nil {
 			slog.Warn("[FetchAndStoreTopics] Failed to generate topics, retrying...", slog.String("error", err.Error()))
@@ -32,7 +34,7 @@ func FetchAndStoreTopics() {
 			continue
 		}
 
-		err = db.StoreTopics(context.Background(), topics.Topics)
+		err = db.StoreBatchedTopics(topics.Topics)
 		if err != nil {
 			slog.Error("[FetchAndStoreTopics] Failed to store topics in DB", slog.String("error", err.Error()))
 			time.Sleep(5 * time.Second)
@@ -62,8 +64,7 @@ var CategoryToSubreddits = map[string][]string{
 func FetchRedditContentForTopics() {
 	slog.Info("🔄 Fetching Reddit content for stored topics...")
 
-	ctx := context.Background()
-	topics, err := db.GetLatestTopics(ctx)
+	topics, err := db.GetAllTopics()
 	if err != nil {
 		slog.Error("❌ Failed to fetch topics from DB", slog.String("error", err.Error()))
 		return
