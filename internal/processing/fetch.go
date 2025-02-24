@@ -62,33 +62,35 @@ var CategoryToSubreddits = map[string][]string{
 
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka
 func FetchRedditContentForTopics() {
-	slog.Info("🔄 Fetching Reddit content for stored topics...")
+	slog.Info("Fetching Reddit content for stored topics...")
 
 	topics, err := db.GetAllTopics()
 	if err != nil {
-		slog.Error("❌ Failed to fetch topics from DB", slog.String("error", err.Error()))
+		slog.Error("Failed to fetch topics from DB", slog.String("error", err.Error()))
 		return
 	}
 
 	if len(topics) == 0 {
-		slog.Warn("⚠️ No new topics found. Skipping Reddit fetch.")
+		slog.Warn("No new topics found. Skipping Reddit fetch.")
 		return
 	}
 
-	// 🔥 Process each topic
+	dedupeSet := make(map[string]struct{})
+
+	// Process each topic
 	for _, topic := range topics {
 		subreddits, exists := CategoryToSubreddits[topic.Category]
 		if !exists {
-			slog.Warn("⚠️ No matching subreddits found for topic category", slog.String("category", topic.Category))
+			slog.Warn("No matching subreddits found for topic category", slog.String("category", topic.Category))
 			continue
 		}
 
-		slog.Info("🔍 Fetching Reddit posts for topic",
+		slog.Info("Fetching Reddit posts for topic",
 			slog.String("topic", topic.Topic),
 			slog.String("category", topic.Category),
 			slog.Any("subreddits", subreddits))
 
-		// 🔥 Fetch Reddit posts from relevant subreddits
+		// Fetch Reddit posts from relevant subreddits
 		for _, subreddit := range subreddits {
 			posts, err := clients.GetRedditClient().FetchSubredditPosts(subreddit, topic.Topic)
 			if err != nil {
@@ -99,8 +101,17 @@ func FetchRedditContentForTopics() {
 				continue
 			}
 
-			// ✅ Send each post to Kafka for processing
+			// Send each post to Kafka for processing
 			for _, post := range posts {
+
+				dedupeKey := fmt.Sprintf("%s-%s", topic.Topic, post.PostID)
+
+				if _, exists := dedupeSet[dedupeKey]; exists {
+					continue
+				}
+
+				dedupeSet[dedupeKey] = struct{}{}
+
 				err := clients.PublishToKafka(post)
 				if err != nil {
 					slog.Warn("⚠️ Failed to publish to Kafka",
@@ -112,5 +123,5 @@ func FetchRedditContentForTopics() {
 		}
 	}
 
-	slog.Info("✅ Successfully fetched & sent Reddit content to Kafka!")
+	slog.Info("Successfully fetched & sent Reddit content to Kafka!")
 }

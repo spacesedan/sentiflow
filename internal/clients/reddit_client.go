@@ -82,6 +82,7 @@ func (rc *RedditClient) FetchSubredditPosts(subreddit, topic string) ([]models.R
 	queryParams.Add("q", topic)
 	queryParams.Add("sort", "top")
 	queryParams.Add("limit", "100")
+	// restricts search to specific sub reddit
 	queryParams.Add("restrict_sr", "0")
 	queryParams.Add("t", "week")
 	queryParams.Add("type", "link")
@@ -177,6 +178,7 @@ func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, err
 			PostContent: post.Selftext,
 			Upvotes:     post.Ups,
 			CreatedAt:   time.Unix(int64(post.CreatedUTC), 0),
+			PostID:      post.ID,
 		})
 	}
 

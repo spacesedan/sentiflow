@@ -28,13 +28,18 @@ func main() {
 	config.LoadEnv(env)
 	logging.InitLogger()
 
-	err := clients.InitKafka()
-	if err != nil {
-		panic(err)
+	for {
+		err := clients.InitKafka()
+		if err == nil {
+			break
+		}
+
+		slog.Warn("Kafka init failed, retrying...", slog.String("error", err.Error()))
+		time.Sleep(5 * time.Second)
 	}
 	defer clients.CloseKafka()
 
-	// ✅ Load intervals from environment
+	// Load intervals from environment
 	topicFetchInterval, err := strconv.Atoi(os.Getenv("TOPIC_FETCH_INTERVAL"))
 	if err != nil {
 		topicFetchInterval = 21600 // Default to 6 hours (in seconds)

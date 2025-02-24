@@ -25,8 +25,8 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 		storedTopics = []models.Topic{} // fallback to empty if DB is unreachable
 	}
 
-	// 2️⃣ Break the incoming headlines into chunks of 100
-	batches := chunkArticles(headlines, 100)
+	// 2️⃣ Break the incoming headlines into chunks of 150
+	batches := chunkArticles(headlines, 150)
 	slog.Info("[TopicGenerator] Headlines chunked", slog.Int("num_chunks", len(batches)))
 
 	var allTopics []models.Topic // final aggregate of unique topics
@@ -46,18 +46,24 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 
 		// 4️⃣ Build the minimal prompt
 		prompt := `
-Shorten every topic into a short, precise phrase that can be a search query.
-Categorize them into:
-- Technology, Business & Finance, Politics & World Affairs, Entertainment & Pop Culture,
-  Health & Science, Sports, Lifestyle & Society, Memes & Internet Trends, Crime & Law.
-Include "url" in the final output. Deduplicate if you produce the same URL multiple times.
+Shorten each headline into a concise, **search-friendly phrase**. 
+**Important**: 
+- Preserve any **names or key entities** (e.g., people, companies, places) mentioned in the original text.
+- Assign **exactly one** of these categories:
+  - Technology
+  - Business & Finance
+  - Politics & World Affairs
+  - Entertainment & Pop Culture
+  - Health & Science
+  - Sports
+  - Lifestyle & Society
+  - Memes & Internet Trends
+  - Crime & Law
+- **Deduplicate** by URL: if the same URL appears multiple times, only **one** entry should be returned for that URL.
 
-Output JSON Format:
-{
-  "topics": [
-    {"topic": "XXX", "category": "XXX", "url": "XXX"}
-  ]
-}
+### Output Requirements
+- Return **valid JSON** with the format:
+{ "topics": [ {"topic": "XXX", "category": "XXX", "url": "XXX"} ] }
 `
 
 		// 5️⃣ Call OpenAI

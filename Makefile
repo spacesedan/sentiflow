@@ -19,7 +19,7 @@ refresh_services:
 	docker compose -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
 
 .PHONY: restart_services
-restart_services: stop_services start_services
+restart_services: refresh_services start_services
 
 SERVICE ?= ""
 .PHONY: service_logs
