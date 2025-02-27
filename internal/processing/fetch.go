@@ -3,10 +3,13 @@ package processing
 import (
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/spacesedan/sentiflow/internal/clients"
 	"github.com/spacesedan/sentiflow/internal/db"
+	"github.com/spacesedan/sentiflow/internal/models"
 )
 
 func FetchAndStoreTopics() {
@@ -58,6 +61,49 @@ var CategoryToSubreddits = map[string][]string{
 	"Lifestyle & Society":         {"relationships", "selfimprovement", "lifeprotips", "socialskills", "relationship_advice"},
 	"Memes & Internet Trends":     {"memes", "dankmemes", "me_irl", "OutOfTheLoop", "PoliticalHumor"},
 	"Crime & Law":                 {"legaladvice", "TrueCrime", "law", "CrimeScene"},
+}
+
+var (
+	CategoryToSubredditsStr = make(map[string]string)
+	CategoryMap             = []string{
+		"Technology",
+		"Business & Finance",
+		"Politics & World Affairs",
+		"Entertainment & Pop Culture",
+		"Health & Science",
+		"Sports",
+		"Lifestyle & Society",
+		"Memes & Internet Trends",
+		"Crime & Law",
+	}
+	categoryHelpersOnce sync.Once
+)
+
+func InitCategoryHelpers() {
+	categoryHelpersOnce.Do(func() {
+		CategoryMap = CategoryMap[:0]
+
+		for category, subreddits := range CategoryToSubreddits {
+			CategoryMap = append(CategoryMap, category)
+			CategoryToSubredditsStr[category] = strings.Join(subreddits, "+")
+		}
+	})
+}
+
+// mapTopicsToCategory creates a map of topics that can be used to create queries for the Reddit API
+func mapTopicsToCategory(topics []models.Topic) map[string][]models.Topic {
+	topicMap := make(map[string][]models.Topic)
+
+	for _, topic := range topics {
+		topicMap[topic.Category] = append(topicMap[topic.Category], topic)
+	}
+
+	return topicMap
+}
+
+const MAX_TOPIC_QUERY_SIZE = 512
+
+func buildRedditAPIQuery(query string) string {
 }
 
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka

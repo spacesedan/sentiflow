@@ -55,6 +55,8 @@ func main() {
 	defer topicTicker.Stop()
 	defer redditTicker.Stop()
 
+	processing.InitCategoryHelpers()
+
 	// ✅ Run both fetchers immediately
 	go func() {
 		processing.FetchAndStoreTopics()

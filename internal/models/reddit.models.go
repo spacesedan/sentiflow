@@ -17,6 +17,7 @@ type RedditAPIResponse struct {
 }
 
 type RedditAPIData struct {
+	After    *string          `json:"after"`
 	Children []RedditAPIChild `json:"children"`
 }
 
