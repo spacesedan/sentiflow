@@ -7,9 +7,6 @@ type NewsAPITopHeadlinesResponse = struct {
 }
 
 type NewsAPIArticles = struct {
-	Source struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"source"`
 	Title string `json:"title"`
+	URL   string `json:"url"`
 }

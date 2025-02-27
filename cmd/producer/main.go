@@ -10,7 +10,6 @@ import (
 
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
-	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/logging"
 	"github.com/spacesedan/sentiflow/internal/processing"
 )
@@ -29,19 +28,18 @@ func main() {
 	config.LoadEnv(env)
 	logging.InitLogger()
 
-	err := db.InitDB()
-	if err != nil {
-		panic(err)
-	}
-	defer db.CloseDB()
+	for {
+		err := clients.InitKafka()
+		if err == nil {
+			break
+		}
 
-	err = clients.InitKafka()
-	if err != nil {
-		panic(err)
+		slog.Warn("Kafka init failed, retrying...", slog.String("error", err.Error()))
+		time.Sleep(5 * time.Second)
 	}
 	defer clients.CloseKafka()
 
-	// ✅ Load intervals from environment
+	// Load intervals from environment
 	topicFetchInterval, err := strconv.Atoi(os.Getenv("TOPIC_FETCH_INTERVAL"))
 	if err != nil {
 		topicFetchInterval = 21600 // Default to 6 hours (in seconds)
@@ -49,7 +47,7 @@ func main() {
 
 	redditFetchInterval, err := strconv.Atoi(os.Getenv("REDDIT_FETCH_INTERVAL"))
 	if err != nil {
-		redditFetchInterval = 900 // Default to 15 minutes (in seconds)
+		redditFetchInterval = 1800 // Default to 30 minutes (in seconds)
 	}
 
 	topicTicker := time.NewTicker(time.Duration(topicFetchInterval) * time.Second)

@@ -9,6 +9,7 @@ type RedditPost struct {
 	PostContent string    `json:"post_content"`
 	Upvotes     int       `json:"upvotes"`
 	CreatedAt   time.Time `json:"created_at"`
+	PostID      string    `json:"id"`
 }
 
 type RedditAPIResponse struct {
@@ -29,4 +30,6 @@ type RedditAPIClildData struct {
 	Selftext   string  `json:"selftext"`
 	Ups        int     `json:"ups"`
 	CreatedUTC float64 `json:"created_utc"`
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
 }

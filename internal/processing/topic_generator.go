@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -15,107 +14,159 @@ import (
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func GenerateTopicsFromHeadlines(headlinesResponse []models.NewsAPITopHeadlinesResponse) (*models.OpenAITopicResponse, error) {
-	var topics models.OpenAITopicResponse
+// GenerateTopicsFromHeadlines processes new headlines in batches, dedupes results, and merges them
+func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.OpenAITopicResponse, error) {
+	slog.Info("[TopicGenerator] Starting to generate topics from headlines")
 
-	slog.Info("[TopicGenerator] Generating Topics from NewsAPI Top Headlines")
-	jsonBytes, err := json.Marshal(headlinesResponse)
+	// 1️⃣ Fetch all stored topics from DB for external dedup
+	storedTopics, err := db.GetAllTopics()
 	if err != nil {
-		slog.Error("[TopicGenerator] Failed to marshal NewsAPI headlines", slog.String("error", err.Error()))
-		return nil, fmt.Errorf("[TopicGenerator] Failed to marshal NewsAPI headlines: %w", err)
+		slog.Error("[TopicGenerator] Failed to fetch stored topics from DB", slog.String("error", err.Error()))
+		storedTopics = []models.Topic{} // fallback to empty if DB is unreachable
 	}
 
-	ctx := context.Background()
-	recentHeadlines, err := db.GetRecentHeadlines(ctx)
-	if err != nil {
-		slog.Error("[TopicGenerator] Failed to fetch recent healines", slog.String("error", err.Error()))
-	}
+	// 2️⃣ Break the incoming headlines into chunks of 150
+	batches := chunkArticles(headlines, 150)
+	slog.Info("[TopicGenerator] Headlines chunked", slog.Int("num_chunks", len(batches)))
 
-	recentHeadlinesStr := `
-    - The following headlines have already been processed. If a new headline matches any of these, DO NOT generate a topic for it:
-    `
-	if len(recentHeadlines) > 0 {
-		recentHeadlinesStr += "- " + strings.Join(recentHeadlines, "\n- ")
-	} else {
-		recentHeadlinesStr += "None"
-	}
+	var allTopics []models.Topic // final aggregate of unique topics
 
-	prompt := fmt.Sprintf(`
-    Extract key topics from the following JSON object containing news article titles.
+	for i, batch := range batches {
+		if i > 0 {
+			// Sleep a bit to avoid hitting any rate limits
+			time.Sleep(3 * time.Second)
+		}
 
-    🔹 **Rules:**
-    - Condense each topic into a **short, precise phrase** that can be used as a search query.
-    - Ensure topics are **general enough** to be searched across different APIs.
-    - Categorize each topic into one of the following categories:
-        - **Technology**
-        - **Business & Finance**
-        - **Politics & World Affairs**
-        - **Entertainment & Pop Culture**
-        - **Health & Science**
-        - **Sports**
-        - **Lifestyle & Society**
-        - **Memes & Internet Trends**
-        - **Crime & Law**
-    - Include the original title of the headline in "original_headline".
-    
-    ⚠️ **IMPORTANT:**  
-    - If a headline appears in the **"Previously Processed Headlines"** section below, **DO NOT** generate a topic for it.  
-    - This means you MUST check every new headline against the list below.  
-    - If a new headline is even slightly similar, SKIP IT.
+		// 3️⃣ Marshal only the chunk
+		batchBytes, err := json.Marshal(batch)
+		if err != nil {
+			slog.Error("[TopicGenerator] JSON marshal batch failed", slog.String("error", err.Error()))
+			continue
+		}
 
-    %s
+		// 4️⃣ Build the minimal prompt
+		prompt := `
+Shorten each headline into a concise, **search-friendly phrase**. 
+**Important**: 
+- Preserve any **names or key entities** (e.g., people, companies, places) mentioned in the original text.
+- Assign **exactly one** of these categories:
+  - Technology
+  - Business & Finance
+  - Politics & World Affairs
+  - Entertainment & Pop Culture
+  - Health & Science
+  - Sports
+  - Lifestyle & Society
+  - Memes & Internet Trends
+  - Crime & Law
+- **Deduplicate** by URL: if the same URL appears multiple times, only **one** entry should be returned for that URL.
 
-    🔹 **Return JSON Output Format:**
-    using the following structure:
-    {
-        "topics" : [
-            {
-                "topic" : "XXX",
-                "category" : "XXX",
-                "original_headline" : "XXX"
-            }
-        ]
-    }
-`, recentHeadlinesStr)
+### Output Requirements
+- Return **valid JSON** with the format:
+{ "topics": [ {"topic": "XXX", "category": "XXX", "url": "XXX"} ] }
+`
 
-	start := time.Now()
-	chatComplettion, err := clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),
-		openai.ChatCompletionNewParams{
-			Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
-				openai.SystemMessage(prompt),
-				openai.UserMessage(string(jsonBytes)),
-			}),
-			Model:       openai.F(openai.ChatModelGPT3_5Turbo),
-			Temperature: openai.Float(0.5),
-		})
-	elapsed := time.Since(start)
-	if err != nil {
-		slog.Error("[TopicGenerator] OpenAI API call failed",
-			slog.String("error", err.Error()),
+		// 5️⃣ Call OpenAI
+		start := time.Now()
+		chatCompletion, err := clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),
+			openai.ChatCompletionNewParams{
+				Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+					openai.SystemMessage(prompt),
+					openai.UserMessage(string(batchBytes)),
+				}),
+				Model:       openai.F(openai.ChatModelGPT3_5Turbo),
+				Temperature: openai.Float(0.5),
+				// Optionally set a max token limit for the response, e.g.,
+				// MaxTokens: openai.Int(500),
+			})
+		elapsed := time.Since(start)
+
+		if err != nil {
+			slog.Error("[TopicGenerator] OpenAI API call failed",
+				slog.String("error", err.Error()),
+				slog.Duration("duration", elapsed))
+			continue
+		}
+
+		slog.Info("[TopicGenerator] OpenAI call for batch completed",
+			slog.Int("batch_index", i),
 			slog.Duration("duration", elapsed))
 
-		return nil, fmt.Errorf("[TopicGenerator] OpenAI API call failed: %w", err)
+		if len(chatCompletion.Choices) == 0 || strings.TrimSpace(chatCompletion.Choices[0].Message.Content) == "" {
+			slog.Error("[TopicGenerator] OpenAI returned an empty response for this batch")
+			continue
+		}
+
+		topicsRaw := strings.TrimSpace(chatCompletion.Choices[0].Message.Content)
+		// remove optional triple-backticks if present
+		topicsRaw = strings.TrimPrefix(topicsRaw, "```json")
+		topicsRaw = strings.TrimSuffix(topicsRaw, "```")
+		topicsRaw = strings.TrimSpace(topicsRaw)
+
+		var batchResp models.OpenAITopicResponse
+		if err := json.Unmarshal([]byte(topicsRaw), &batchResp); err != nil {
+			slog.Error("[TopicGenerator] Failed to parse OpenAI response JSON", slog.String("error", err.Error()))
+			continue
+		}
+
+		// 6️⃣ Remove duplicates within the new batch itself
+		batchResp.Topics = removeLocalDuplicates(batchResp.Topics)
+
+		// 7️⃣ Remove duplicates that are already in storedTopics
+		batchResp.Topics = filterAgainstStored(batchResp.Topics, storedTopics)
+
+		// 9️⃣ Accumulate these new topics in allTopics for the final return
+		allTopics = append(allTopics, batchResp.Topics...)
 	}
 
-	slog.Info("[TopicGenerator] OpenAI API call completed", slog.Duration("duration", elapsed))
-
-	if len(chatComplettion.Choices) == 0 || strings.TrimSpace(chatComplettion.Choices[0].Message.Content) == "" {
-		slog.Error("[TopicGenerator] OpenAI returned an empty response")
-		return nil, errors.New("[TopicGenerator] OpenAI returned an empty response")
+	if len(allTopics) == 0 {
+		return nil, errors.New("[TopicGenerator] No new topics were generated or all were duplicates")
 	}
 
-	topicsRaw := strings.TrimSpace(chatComplettion.Choices[0].Message.Content)
-	topicsRaw = strings.TrimPrefix(topicsRaw, "```json")
-	topicsRaw = strings.TrimSuffix(topicsRaw, "```")
-	topicsRaw = strings.TrimSpace(topicsRaw)
-	slog.Debug("[TopicGenerator] Raw OpenAI Response", slog.String("topicsRaw", topicsRaw))
+	slog.Info("[TopicGenerator] Successfully generated topics from headlines",
+		slog.Int("total_new_topics", len(allTopics)))
+	return &models.OpenAITopicResponse{Topics: allTopics}, nil
+}
 
-	err = json.Unmarshal([]byte(topicsRaw), &topics)
-	if err != nil {
-		slog.Error("[TopicGenerator] Failed to parse OpenAI response", slog.String("error", err.Error()))
-		return nil, fmt.Errorf("[TopicGenerator] Failed to parse OpenAI response: %w", err)
+// chunkArticles splits a slice of NewsAPIArticles into groups of `size`.
+func chunkArticles(articles []models.NewsAPIArticles, size int) [][]models.NewsAPIArticles {
+	var batches [][]models.NewsAPIArticles
+	for i := 0; i < len(articles); i += size {
+		end := i + size
+		if end > len(articles) {
+			end = len(articles)
+		}
+		batches = append(batches, articles[i:end])
+	}
+	return batches
+}
+
+// removeLocalDuplicates ensures the newly generated batch from OpenAI
+// doesn't contain duplicates among itself (by URL).
+func removeLocalDuplicates(topics []models.Topic) []models.Topic {
+	seen := make(map[string]struct{})
+	var unique []models.Topic
+	for _, t := range topics {
+		if _, exists := seen[t.URL]; !exists && t.URL != "" {
+			seen[t.URL] = struct{}{}
+			unique = append(unique, t)
+		}
+	}
+	return unique
+}
+
+// filterAgainstStored removes any topics whose URL is already in storedTopics
+func filterAgainstStored(newTopics []models.Topic, storedTopics []models.Topic) []models.Topic {
+	storedSet := make(map[string]struct{}, len(storedTopics))
+	for _, st := range storedTopics {
+		storedSet[st.URL] = struct{}{}
 	}
 
-	slog.Info("[TopicGenerator] Successfully generated topics from headlines")
-	return &topics, nil
+	var final []models.Topic
+	for _, t := range newTopics {
+		if _, exists := storedSet[t.URL]; !exists {
+			final = append(final, t)
+		}
+	}
+	return final
 }
