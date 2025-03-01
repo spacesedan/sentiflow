@@ -21,11 +21,14 @@ refresh_services:
 .PHONY: restart_services
 restart_services: refresh_services start_services
 
-SERVICE ?= ""
 .PHONY: service_logs
 service_logs:
-	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $(SERVICE)
-
+	@read -p "Enter the service name: " service; \
+	if [ -z "$$service" ]; then \
+		echo "ERROR: SERVICE is required!"; \
+		exit 1; \
+	fi; \
+	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $$service
 # DynamoDB
 #
 TOPICS_TABLE_NAME=Topics

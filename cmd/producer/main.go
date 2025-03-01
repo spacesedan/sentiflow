@@ -39,6 +39,9 @@ func main() {
 	}
 	defer clients.CloseKafka()
 
+	clients.InitValkey()
+	defer clients.CloseValkey()
+
 	// Load intervals from environment
 	topicFetchInterval, err := strconv.Atoi(os.Getenv("TOPIC_FETCH_INTERVAL"))
 	if err != nil {

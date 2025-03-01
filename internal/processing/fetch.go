@@ -1,6 +1,7 @@
 package processing
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -65,26 +66,16 @@ var CategoryToSubreddits = map[string][]string{
 
 var (
 	CategoryToSubredditsStr = make(map[string]string)
-	CategoryMap             = []string{
-		"Technology",
-		"Business & Finance",
-		"Politics & World Affairs",
-		"Entertainment & Pop Culture",
-		"Health & Science",
-		"Sports",
-		"Lifestyle & Society",
-		"Memes & Internet Trends",
-		"Crime & Law",
-	}
-	categoryHelpersOnce sync.Once
+	Categories              []string
+	categoryHelpersOnce     sync.Once
 )
 
 func InitCategoryHelpers() {
 	categoryHelpersOnce.Do(func() {
-		CategoryMap = CategoryMap[:0]
+		Categories = Categories[:0]
 
 		for category, subreddits := range CategoryToSubreddits {
-			CategoryMap = append(CategoryMap, category)
+			Categories = append(Categories, category)
 			CategoryToSubredditsStr[category] = strings.Join(subreddits, "+")
 		}
 	})
@@ -101,10 +92,7 @@ func mapTopicsToCategory(topics []models.Topic) map[string][]models.Topic {
 	return topicMap
 }
 
-const MAX_TOPIC_QUERY_SIZE = 512
-
-func buildRedditAPIQuery(query string) string {
-}
+const VALKEY_POSTS_KEY = "reddit:processed_posts"
 
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka
 func FetchRedditContentForTopics() {
@@ -121,50 +109,88 @@ func FetchRedditContentForTopics() {
 		return
 	}
 
-	dedupeSet := make(map[string]struct{})
+	topicMap := mapTopicsToCategory(topics)
 
-	// Process each topic
-	for _, topic := range topics {
-		subreddits, exists := CategoryToSubreddits[topic.Category]
+	valkeyClient := clients.GetValkeyClient()
+	ctx := context.Background()
+
+	// Process each query
+	for _, category := range Categories {
+		subreddits, exists := CategoryToSubredditsStr[category]
 		if !exists {
-			slog.Warn("No matching subreddits found for topic category", slog.String("category", topic.Category))
+			slog.Warn("No Matching subbreddits found for topic category", slog.String("category", category))
 			continue
 		}
 
-		slog.Info("Fetching Reddit posts for topic",
-			slog.String("topic", topic.Topic),
-			slog.String("category", topic.Category),
-			slog.Any("subreddits", subreddits))
-
-		// Fetch Reddit posts from relevant subreddits
-		for _, subreddit := range subreddits {
-			posts, err := clients.GetRedditClient().FetchSubredditPosts(subreddit, topic.Topic)
-			if err != nil {
-				slog.Warn("⚠️ Failed to fetch Reddit posts",
-					slog.String("subreddit", subreddit),
-					slog.String("topic", topic.Topic),
-					slog.String("error", err.Error()))
-				continue
-			}
-
-			// Send each post to Kafka for processing
-			for _, post := range posts {
-
-				dedupeKey := fmt.Sprintf("%s-%s", topic.Topic, post.PostID)
-
-				if _, exists := dedupeSet[dedupeKey]; exists {
-					continue
+		for _, topic := range topicMap[category] {
+			after := ""
+			for {
+				retryCount := 3
+				var posts []models.RedditPost
+				var nextAfter string
+				for attempt := 1; attempt <= retryCount; attempt++ {
+					var fetchErr error
+					posts, nextAfter, fetchErr = clients.GetRedditClient().FetchSubredditPosts(subreddits, topic.Topic, after)
+					if fetchErr != nil {
+						slog.Warn("Failed to fetch Reddit posts",
+							slog.String("subreddits", subreddits),
+							slog.String("topic", topic.Topic),
+							slog.String("error", fetchErr.Error()),
+							slog.Int("attempt", attempt))
+						time.Sleep(2 * time.Second)
+						continue
+					}
+					break // break on success
 				}
 
-				dedupeSet[dedupeKey] = struct{}{}
+				// slog.Debug("Reddit fetch results", slog.String("query", topic.Topic), slog.Int("post amount", len(posts)))
 
-				err := clients.PublishToKafka(post)
-				if err != nil {
-					slog.Warn("⚠️ Failed to publish to Kafka",
-						slog.String("topic", post.Topic),
-						slog.String("subreddit", post.Subreddit),
-						slog.String("error", err.Error()))
+				// Send each post to Kafka for processing
+				for _, post := range posts {
+					dedupeKey := post.PostID
+
+					// Check to see if post has been processed in the last 24 hours
+					exists, err := valkeyClient.Do(ctx, valkeyClient.B().Sismember().Key(VALKEY_POSTS_KEY).Member(dedupeKey).Build()).AsBool()
+					if err != nil {
+						fmt.Println(err)
+					}
+
+					// if the post exists skip it
+					if exists {
+						slog.Debug("Skipping duplicate post", slog.String("post_id", post.PostID))
+						continue
+					}
+
+					// add the post id to valkey and set a 24 expiration timer
+					err = valkeyClient.Do(ctx, valkeyClient.B().Sadd().Key(VALKEY_POSTS_KEY).Member(dedupeKey).Build()).Error()
+					if err != nil {
+						slog.Warn("Failed to add post to Valkey",
+							slog.String("post_id", post.PostID),
+							slog.String("error", err.Error()))
+						continue
+					}
+
+					// Ensure the set expires after 24 hours (set once)
+					ttl, err := valkeyClient.Do(ctx, valkeyClient.B().Ttl().Key(VALKEY_POSTS_KEY).Build()).AsInt64()
+					if err == nil && ttl == -1 {
+						valkeyClient.Do(ctx, valkeyClient.B().Expire().Key(VALKEY_POSTS_KEY).Seconds(int64(time.Hour*24)).Build())
+					}
+
+					// publish post to kafka
+					err = clients.PublishToKafka(post)
+					if err != nil {
+						slog.Warn("Failed to publish to Kafka",
+							slog.String("topic", post.Topic),
+							slog.String("post_id", post.PostID),
+							slog.String("subreddit", post.Subreddit),
+							slog.String("error", err.Error()))
+					}
 				}
+				// stop paginating when there are no more results
+				if nextAfter == "" {
+					break
+				}
+				after = nextAfter
 			}
 		}
 	}
