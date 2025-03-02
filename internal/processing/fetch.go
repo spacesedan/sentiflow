@@ -21,7 +21,8 @@ func FetchAndStoreTopics() {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		slog.Info("[FetchAndStoreTopics] Attempt", slog.Int("atttemp", attempt))
 
-		headlines, err := clients.GetNewsAPIClient().GetTopHeadlines()
+		// Rate limited :(
+		headlines, err := clients.GetNewsAPIClient().GetTopHeadlinesByCategory()
 		if err != nil {
 			slog.Warn("[FetchAndStoreTopics] Failed to fetch latested headlines from NewsAPI, retrying...",
 				slog.String("error", err.Error()))
@@ -29,7 +30,14 @@ func FetchAndStoreTopics() {
 			continue
 		}
 
-		fmt.Println(len(headlines))
+		// For when NewsAPI account gets rate-limited
+		// headlines, err := clients.GetNewsAPIClient().GetTopHeadlinesFromFile()
+		// if err != nil {
+		// 	slog.Warn("[FetchAndStoreTopics] Failed to fetch latested headlines from NewsAPI, retrying...",
+		// 		slog.String("error", err.Error()))
+		// 	time.Sleep(5 * time.Second)
+		// 	continue
+		// }
 
 		topics, err := GenerateTopicsFromHeadlines(headlines)
 		if err != nil {
@@ -143,37 +151,37 @@ func FetchRedditContentForTopics() {
 					break // break on success
 				}
 
-				// slog.Debug("Reddit fetch results", slog.String("query", topic.Topic), slog.Int("post amount", len(posts)))
+				slog.Debug("Reddit fetch results", slog.String("query", topic.Topic), slog.Int("post amount", len(posts)))
 
 				// Send each post to Kafka for processing
 				for _, post := range posts {
 					dedupeKey := post.PostID
+					key := fmt.Sprintf("%s:%s", VALKEY_POSTS_KEY, dedupeKey)
 
 					// Check to see if post has been processed in the last 24 hours
-					exists, err := valkeyClient.Do(ctx, valkeyClient.B().Sismember().Key(VALKEY_POSTS_KEY).Member(dedupeKey).Build()).AsBool()
+					exists, err := valkeyClient.Do(ctx, valkeyClient.B().Sismember().Key(key).Member(dedupeKey).Build()).AsBool()
 					if err != nil {
 						fmt.Println(err)
 					}
 
 					// if the post exists skip it
 					if exists {
-						slog.Debug("Skipping duplicate post", slog.String("post_id", post.PostID))
+						slog.Debug("Skipping duplicate post", slog.String("topic", topic.Topic), slog.String("post_id", post.PostID))
 						continue
 					}
 
 					// add the post id to valkey and set a 24 expiration timer
-					err = valkeyClient.Do(ctx, valkeyClient.B().Sadd().Key(VALKEY_POSTS_KEY).Member(dedupeKey).Build()).Error()
-					if err != nil {
-						slog.Warn("Failed to add post to Valkey",
-							slog.String("post_id", post.PostID),
-							slog.String("error", err.Error()))
-						continue
-					}
+					responses := valkeyClient.DoMulti(ctx,
+						valkeyClient.B().Sadd().Key(key).Member(dedupeKey).Build(),
+						valkeyClient.B().Expire().Key(key).Seconds(86400).Build())
 
-					// Ensure the set expires after 24 hours (set once)
-					ttl, err := valkeyClient.Do(ctx, valkeyClient.B().Ttl().Key(VALKEY_POSTS_KEY).Build()).AsInt64()
-					if err == nil && ttl == -1 {
-						valkeyClient.Do(ctx, valkeyClient.B().Expire().Key(VALKEY_POSTS_KEY).Seconds(int64(time.Hour*24)).Build())
+					for _, resp := range responses {
+						if err := resp.Error(); err != nil {
+							slog.Warn("Failed to add post to Valkey",
+								slog.String("post_id", post.PostID),
+								slog.String("error", err.Error()))
+							continue
+						}
 					}
 
 					// publish post to kafka

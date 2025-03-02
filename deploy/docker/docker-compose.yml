@@ -23,6 +23,8 @@ services:
     ports:
       - "9092:9092"  # Kafka for Docker containers
       - "29092:29092" # Kafka for local machine access
+    # volumes:
+    #   - ./kafka/scripts/init-kafka.sh:/docker-entrypoint-initdb.d/init-kafka.sh
     depends_on:
       - zookeeper
 

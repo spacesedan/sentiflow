@@ -3,9 +3,7 @@ package processing
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -57,15 +55,16 @@ If you are unable to generate a valid response, return an **empty JSON object**:
 func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.OpenAITopicResponse, error) {
 	slog.Info("[TopicGenerator] Starting topic generation")
 
+	var err error
 	// Fetch stored topics from DB for deduplication
 	storedTopics, err := db.GetAllTopics()
 	if err != nil {
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
-		storedTopics = []models.Topic{} // fallback to empty
+		storedTopics = []models.Topic{} // Fallback to empty
 	}
 
-	// Chunk articles into batches of 75
-	batches := chunkArticles(headlines, 75)
+	// Chunk articles into batches of 100
+	batches := chunkArticles(headlines, 100)
 	slog.Info("[TopicGenerator] Headlines chunked", slog.Int("num_chunks", len(batches)))
 
 	var allTopics []models.Topic
@@ -84,11 +83,13 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 
 		// OpenAI API Call with retry logic
 		var topicsRaw string
-		var chatCompletion *openai.ChatCompletion
 		maxRetries := 3
+		success := false // Track success
 
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			chatCompletion, err = clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),
+			err = nil
+
+			chatCompletion, err := clients.GetAIClient().Client.Chat.Completions.New(context.TODO(),
 				openai.ChatCompletionNewParams{
 					Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
 						openai.SystemMessage(openAIPrompt),
@@ -97,7 +98,6 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 					Model:       openai.F(openai.ChatModelGPT3_5Turbo),
 					Temperature: openai.Float(0.5),
 				})
-			// Handle API failure
 			if err != nil {
 				slog.Warn("[TopicGenerator] OpenAI API call failed, retrying",
 					slog.Int("attempt", attempt),
@@ -106,7 +106,6 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 				continue
 			}
 
-			// Extract response
 			if len(chatCompletion.Choices) == 0 || strings.TrimSpace(chatCompletion.Choices[0].Message.Content) == "" {
 				slog.Warn("[TopicGenerator] OpenAI returned empty response, retrying",
 					slog.Int("attempt", attempt))
@@ -114,58 +113,11 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 				continue
 			}
 
-			// Clean OpenAI response formatting issues
-			topicsRaw = strings.TrimSpace(topicsRaw)
-			topicsRaw = strings.TrimPrefix(topicsRaw, "```json")
-			topicsRaw = strings.TrimSuffix(topicsRaw, "```")
-			topicsRaw = strings.ReplaceAll(topicsRaw, "\u0022", `"`) // Replace Unicode quotes if present
-			topicsRaw = strings.ReplaceAll(topicsRaw, "\u201C", `"`) // Replace curly left quote
-			topicsRaw = strings.ReplaceAll(topicsRaw, "\u201D", `"`) // Replace curly right quote
+			topicsRaw = cleanOpenAIResponse(chatCompletion.Choices[0].Message.Content)
 
-			// Step 1: Validate JSON format
-			if !json.Valid([]byte(topicsRaw)) {
-				slog.Warn("[TopicGenerator] OpenAI returned invalid JSON, retrying",
-					slog.Int("attempt", attempt),
-					slog.String("raw_response", topicsRaw))
-				time.Sleep(2 * time.Second)
-				continue
-			}
-
-			err = os.WriteFile("openai.json", []byte(topicsRaw), 0644)
-			if err != nil {
-				panic(err)
-			}
-			os.Exit(1)
-
-			// Step 2: Log raw JSON before parsing
-			slog.Info("[TopicGenerator] Valid JSON response received", slog.String("json_preview", topicsRaw[:min(len(topicsRaw), 500)]))
-
-			// Step 3: Parse as a generic map for inspection
-			var tempMap map[string]interface{}
-			if err := json.Unmarshal([]byte(topicsRaw), &tempMap); err != nil {
-				slog.Warn("[TopicGenerator] Failed to parse JSON into map, retrying",
-					slog.Int("attempt", attempt),
-					slog.String("error", err.Error()))
-				time.Sleep(2 * time.Second)
-				continue
-			}
-
-			// Step 4: Check if "topics" key exists
-			topicsData, exists := tempMap["topics"]
-			if !exists {
-				slog.Warn("[TopicGenerator] Missing 'topics' key in response, retrying",
-					slog.Int("attempt", attempt))
-				time.Sleep(2 * time.Second)
-				continue
-			}
-
-			// Step 5: Marshal back to JSON to check structural correctness
-			_, _ = json.Marshal(topicsData)
-			slog.Info("[TopicGenerator] Extracted 'topics' key successfully")
-
-			// Step 6: Parse JSON into expected struct
+			// Parse JSON
 			var batchResp models.OpenAITopicResponse
-			err := json.Unmarshal([]byte(topicsRaw), &batchResp)
+			err = json.Unmarshal([]byte(topicsRaw), &batchResp)
 			if err != nil {
 				slog.Warn("[TopicGenerator] Failed to parse JSON into struct, retrying",
 					slog.Int("attempt", attempt),
@@ -174,30 +126,26 @@ func GenerateTopicsFromHeadlines(headlines []models.NewsAPIArticles) (*models.Op
 				continue
 			}
 
-			// Step 5: Deduplicate new topics
+			// Deduplicate new topics before appending
 			batchResp.Topics = removeLocalDuplicates(batchResp.Topics)
 			batchResp.Topics = filterAgainstStored(batchResp.Topics, storedTopics)
 			allTopics = append(allTopics, batchResp.Topics...)
 
-			// Successful parse, exit retry loop
+			// Success: Exit retry loop
+			success = true
 			break
 		}
 
-		// If all retries failed, log the final bad response
-		if err != nil {
+		// If all retries failed, log final error
+		if !success {
 			slog.Error("[TopicGenerator] OpenAI failed after retries", slog.String("error", err.Error()))
 			continue
-		}
-
-		if topicsRaw != "" {
-			slog.Error("[TopicGenerator] OpenAI returned unparseable response after retries",
-				slog.String("raw_response", topicsRaw[:500]))
 		}
 	}
 
 	// Handle case where no topics were generated
 	if len(allTopics) == 0 {
-		return nil, errors.New("[TopicGenerator] No new topics were generated or all were duplicates")
+		slog.Info("[TopicGenerator] No new topics were generated or all were duplicates")
 	}
 
 	slog.Info("[TopicGenerator] Successfully generated topics",
@@ -217,6 +165,21 @@ func chunkArticles(articles []models.NewsAPIArticles, size int) [][]models.NewsA
 		batches = append(batches, articles[i:end])
 	}
 	return batches
+}
+
+func cleanOpenAIResponse(response string) string {
+	// Trim unnecessary whitespace
+	response = strings.TrimSpace(response)
+
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimSuffix(response, "```")
+
+	// Standardize quotes in case OpenAI outputs them incorrectly
+	response = strings.ReplaceAll(response, "\u0022", `"`) // Replace Unicode quotes
+	response = strings.ReplaceAll(response, "\u201C", `"`) // Left curly quote
+	response = strings.ReplaceAll(response, "\u201D", `"`) // Right curly quote
+
+	return strings.TrimSpace(response) // Final trim
 }
 
 // removeLocalDuplicates ensures the newly generated batch from OpenAI
