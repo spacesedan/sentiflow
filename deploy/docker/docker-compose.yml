@@ -23,6 +23,8 @@ services:
     ports:
       - "9092:9092"  # Kafka for Docker containers
       - "29092:29092" # Kafka for local machine access
+    # volumes:
+    #   - ./kafka/scripts/init-kafka.sh:/docker-entrypoint-initdb.d/init-kafka.sh
     depends_on:
       - zookeeper
 
@@ -68,6 +70,19 @@ services:
       - ../../migrations:/migrations
 
   # ---------------------------------------------------
+  # Valkey
+  # ---------------------------------------------------
+  valkey:
+    image: valkey/valkey:latest
+    ports:
+      - "6379:6379"
+    environment:
+      - VALKEY_PASSWORD=mypassword
+      - VALKEY_USERNAME=myuser
+    volumes:
+      - valkey_data:/data
+    restart: unless-stopped
+  # ---------------------------------------------------
   # Prometheus (NEW)
   # ---------------------------------------------------
   # prometheus:
@@ -100,5 +115,6 @@ services:
   #
 volumes:
   db_data:
+  valkey_data:
   # grafana_data:
   # prometheus_data:

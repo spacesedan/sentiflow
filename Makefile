@@ -21,11 +21,14 @@ refresh_services:
 .PHONY: restart_services
 restart_services: refresh_services start_services
 
-SERVICE ?= ""
 .PHONY: service_logs
 service_logs:
-	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $(SERVICE)
-
+	@read -p "Enter the service name: " service; \
+	if [ -z "$$service" ]; then \
+		echo "ERROR: SERVICE is required!"; \
+		exit 1; \
+	fi; \
+	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $$service
 # DynamoDB
 #
 TOPICS_TABLE_NAME=Topics
@@ -101,4 +104,8 @@ delete_table:
 .PHONY: reset_dynamodb
 reset_dynamodb: delete_table create_topics_table
 
-
+.PHONY: update_kafka_partitions
+update_kafka_partitions:
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
+		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic reddit-content --partitions 6 --replication-factor 1

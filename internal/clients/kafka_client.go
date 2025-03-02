@@ -34,7 +34,7 @@ func InitKafka() error {
 		"bootstrap.servers":                     broker,
 		"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
 		"api.version.request":                   "true",      // Ensure correct API version request
-		"enable.idempotence":                    "true",
+		"enable.idempotence":                    true,
 		"acks":                                  "all",
 		"max.in.flight.requests.per.connection": 1,
 		"transactional.id":                      "sentiflow-producer-1",
@@ -54,7 +54,8 @@ func InitKafka() error {
 
 func CloseKafka() {
 	if producer != nil {
-		producer.Flush(1)
+		slog.Info("[KafkaClient] Flushing Kafka producer before shutdown...")
+		producer.Flush(5000)
 		producer.Close()
 		slog.Info("Kafka producer shut down")
 	}

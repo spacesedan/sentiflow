@@ -19,9 +19,10 @@ import (
 
 // Reddit API Constants
 const (
-	REDDIT_AUTH_URL = "https://www.reddit.com/api/v1/access_token"
-	REDDIT_API_URL  = "https://oauth.reddit.com/"
-	USER_AGENT      = "sentiflow-bot/0.1"
+	REDDIT_AUTH_URL   = "https://www.reddit.com/api/v1/access_token"
+	REDDIT_API_URL    = "https://oauth.reddit.com"
+	REDDIT_UNAUTH_URL = "https://www.reddit.com"
+	USER_AGENT        = "sentiflow-bot/0.1"
 )
 
 // Concurrency & Rate Limits
@@ -73,34 +74,65 @@ func (rc *RedditClient) RefreshClient() {
 }
 
 // FetchSubredditPosts fetches posts from a subreddit based on a given topic
-func (rc *RedditClient) FetchSubredditPosts(subreddit, topic string) ([]models.RedditPost, error) {
+func (rc *RedditClient) FetchSubredditPosts(subreddit, topic, after string) ([]models.RedditPost, string, error) {
+	slog.Info("[RedditClient] Requesting data from reddit",
+		slog.String("subreddits", subreddit),
+		slog.String("topic", topic))
 	parsedUrl, err := url.Parse(fmt.Sprintf("%s/r/%s/search", REDDIT_API_URL, subreddit))
 	if err != nil {
-		return nil, fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
+		return nil, "", fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
 	}
+	unauthUrl, err := url.Parse(fmt.Sprintf("%s/r/%s/search.json", REDDIT_UNAUTH_URL, subreddit))
+	if err != nil {
+		return nil, "", fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
+	}
+
 	queryParams := parsedUrl.Query()
 	queryParams.Add("q", topic)
 	queryParams.Add("sort", "top")
 	queryParams.Add("limit", "100")
-	// restricts search to specific sub reddit
-	queryParams.Add("restrict_sr", "0")
-	queryParams.Add("t", "week")
-	queryParams.Add("type", "link")
+	queryParams.Add("t", "day")
+	queryParams.Add("type", "link+self")
+	if after != "" {
+		queryParams.Add("after", after)
+	}
 	parsedUrl.RawQuery = queryParams.Encode()
+	unauthUrl.RawQuery = queryParams.Encode()
+
+	// Test urls in local browser with out having oauth token
+	slog.Debug("[RedditClient] Unauth url for testing querys", slog.String("url", unauthUrl.String()))
 
 	req, err := http.NewRequest("GET", parsedUrl.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("User-Agent", USER_AGENT)
 
+	start := time.Now()
 	rawData, err := rc.doRequestWithBackoff(req, subreddit)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	posts, nextAfter, err := parseRedditResponse(rawData, topic)
+	if err != nil {
+		slog.Error("Failed to parse reddit response",
+			slog.String("topics", topic),
+			slog.String("error", err.Error()))
+	}
+
+	slog.Info("[RedditClient] Response deatails",
+		slog.String("subreddits", subreddit),
+		slog.String("topic", topic),
+		slog.Int("post_count", len(posts)),
+		slog.Duration("time_elapsed", time.Since(start)))
+
+	if nextAfter == "null" || nextAfter == "" {
+		return posts, "", nil
 	}
 
 	// Parse Reddit API response into structured RedditPost objects
-	return parseRedditResponse(rawData, topic)
+	return posts, nextAfter, nil
 }
 
 // doRequestWithBackoff executes the request with retry logic and token refresh handling
@@ -160,12 +192,12 @@ func (rc *RedditClient) doRequestWithBackoff(req *http.Request, subreddit string
 }
 
 // parseRedditResponse parses the JSON response from Reddit API into structured RedditPost objects
-func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, error) {
+func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, string, error) {
 	var redditResponse models.RedditAPIResponse
 	err := json.Unmarshal(rawData, &redditResponse)
 	if err != nil {
 		slog.Error("[RedditClient] Failed to parse Reddit API response", slog.String("error", err.Error()))
-		return nil, err
+		return nil, "", err
 	}
 
 	var posts []models.RedditPost
@@ -182,7 +214,7 @@ func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, err
 		})
 	}
 
-	return posts, nil
+	return posts, redditResponse.Data.After, nil
 }
 
 // parseRateLimitHeaders extracts Reddit's rate limit headers
