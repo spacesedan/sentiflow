@@ -2,8 +2,10 @@ package producer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -125,8 +127,16 @@ func FetchRedditContentForTopics(ctx context.Context) {
 		return
 	}
 
-	topicMap := mapTopicsToCategory(topics)
+	topicBytes, err := json.Marshal(topics)
+	if err != nil {
+		slog.Warn("unable to marshal topic data")
+		return
+	}
 
+	os.WriteFile("topics.json", topicBytes, 0644)
+	os.Exit(1)
+
+	topicMap := mapTopicsToCategory(topics)
 	valkeyClient := clients.GetValkeyClient()
 
 	// Process each query
@@ -178,8 +188,10 @@ func FetchRedditContentForTopics(ctx context.Context) {
 					default:
 					}
 
+					topicsStr := strings.ReplaceAll(topic.Topic, " ", "_")
 					dedupeKey := post.PostID
-					key := fmt.Sprintf("%s:%s", VALKEY_POSTS_KEY, dedupeKey)
+
+					key := fmt.Sprintf("%s:%s:%s", VALKEY_POSTS_KEY, topicsStr, dedupeKey)
 
 					// Check to see if post has been processed in the last 24 hours
 					exists, err := valkeyClient.Do(ctx, valkeyClient.B().Sismember().Key(key).Member(dedupeKey).Build()).AsBool()

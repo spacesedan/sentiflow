@@ -57,7 +57,7 @@ update_topics_table_ttl:
     --endpoint-url $(DYNAMODB_ENDPOINT)
 
 .PHONY: create_topics_table
-create_topics_table: init_topics_table update_topics_table_ttl
+create_topics_table: init_topics_table
 
 
 .PHONY: list_tables

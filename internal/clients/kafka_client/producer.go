@@ -109,7 +109,7 @@ func PublishToKafka(post models.RedditPost) error {
 		return fmt.Errorf("[KafkaClient] failed to commit transaction after 3 retries: %w", commitErr)
 	}
 
-	slog.Info("[KafkaClient] Published Reddit post to Kafka transactionally",
+	slog.Debug("[KafkaClient] Published Reddit post to Kafka transactionally",
 		slog.String("topic", post.Topic),
 		slog.String("post_id", post.PostID))
 

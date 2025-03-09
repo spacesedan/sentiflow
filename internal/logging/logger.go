@@ -9,8 +9,17 @@ import (
 )
 
 func InitLogger() {
+	var level slog.Level
+
+	switch os.Getenv("LOG_LEVEL") {
+	case "DEBUG":
+		level = slog.LevelDebug
+	default:
+		level = slog.LevelInfo
+	}
+
 	handler := tint.NewHandler(os.Stdout, &tint.Options{
-		Level:      slog.LevelDebug,
+		Level:      level,
 		TimeFormat: time.Kitchen,
 		AddSource:  true,
 	})
