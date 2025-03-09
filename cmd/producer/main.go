@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,8 +12,9 @@ import (
 
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
+	"github.com/spacesedan/sentiflow/internal/clients/kafka_client"
 	"github.com/spacesedan/sentiflow/internal/logging"
-	"github.com/spacesedan/sentiflow/internal/processing"
+	"github.com/spacesedan/sentiflow/internal/producer"
 )
 
 type ProducerConfig struct {
@@ -30,7 +32,7 @@ func main() {
 	logging.InitLogger()
 
 	for {
-		err := clients.InitKafka()
+		err := kafka_client.InitKafkaProducer(kafka_client.GetKafkaConfig())
 		if err == nil {
 			break
 		}
@@ -38,7 +40,7 @@ func main() {
 		slog.Warn("Kafka init failed, retrying...", slog.String("error", err.Error()))
 		time.Sleep(5 * time.Second)
 	}
-	defer clients.CloseKafka()
+	defer kafka_client.CloseKafkaProducer()
 
 	clients.InitValkey()
 	defer clients.CloseValkey()
@@ -59,11 +61,13 @@ func main() {
 	defer topicTicker.Stop()
 	defer redditTicker.Stop()
 
-	processing.InitCategoryHelpers()
+	producer.InitCategoryHelpers()
 
 	// Handle graceful shutdown
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	redditChan := make(chan func())
 	var wg sync.WaitGroup
@@ -76,22 +80,23 @@ func main() {
 	}()
 
 	// Fetch and store Topics on initial run
-	processing.FetchAndStoreTopics()
-	processing.FetchRedditContentForTopics()
+	producer.FetchAndStoreTopics(ctx)
+	producer.FetchRedditContentForTopics(ctx)
 
 	for {
 		select {
 		case <-topicTicker.C:
-			go processing.FetchAndStoreTopics()
+			go producer.FetchAndStoreTopics(ctx)
 
 		case <-redditTicker.C:
 			wg.Add(1)
 			redditChan <- func() {
-				processing.FetchRedditContentForTopics()
+				producer.FetchRedditContentForTopics(ctx)
 			}
 
 		case <-stopChan:
 			slog.Info("Shutting down producer gracefully...")
+			cancel()
 			close(redditChan)
 			wg.Wait()
 			return
