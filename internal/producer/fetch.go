@@ -2,10 +2,8 @@ package producer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -126,15 +124,6 @@ func FetchRedditContentForTopics(ctx context.Context) {
 		slog.Warn("No new topics found. Skipping Reddit fetch.")
 		return
 	}
-
-	topicBytes, err := json.Marshal(topics)
-	if err != nil {
-		slog.Warn("unable to marshal topic data")
-		return
-	}
-
-	os.WriteFile("topics.json", topicBytes, 0644)
-	os.Exit(1)
 
 	topicMap := mapTopicsToCategory(topics)
 	valkeyClient := clients.GetValkeyClient()
