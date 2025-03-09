@@ -11,7 +11,9 @@ require (
 	github.com/lmittmann/tint v1.0.7
 	github.com/openai/openai-go v0.1.0-alpha.56
 	github.com/subosito/gotenv v1.6.0
+	github.com/valkey-io/valkey-go v1.0.55
 	golang.org/x/oauth2 v0.26.0
+	google.golang.org/protobuf v1.28.0
 )
 
 require (
@@ -35,7 +37,6 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/valkey-io/valkey-go v1.0.55 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )

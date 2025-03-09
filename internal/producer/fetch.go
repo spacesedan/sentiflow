@@ -1,4 +1,4 @@
-package processing
+package producer
 
 import (
 	"context"
@@ -9,16 +9,24 @@ import (
 	"time"
 
 	"github.com/spacesedan/sentiflow/internal/clients"
+	"github.com/spacesedan/sentiflow/internal/clients/kafka_client"
 	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func FetchAndStoreTopics() {
+func FetchAndStoreTopics(ctx context.Context) {
 	slog.Info("[FetchAndStoreTopics] Fetching new topics...")
 
 	maxRetries := 3
 	start := time.Now()
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+
+		select {
+		case <-ctx.Done():
+			slog.Warn("[FetchAndStoreTopics] Context cancelled, stopping...")
+		default:
+		}
+
 		slog.Info("[FetchAndStoreTopics] Attempt", slog.Int("atttemp", attempt))
 
 		// Rate limited :(
@@ -103,7 +111,7 @@ func mapTopicsToCategory(topics []models.Topic) map[string][]models.Topic {
 const VALKEY_POSTS_KEY = "reddit:processed_posts"
 
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka
-func FetchRedditContentForTopics() {
+func FetchRedditContentForTopics(ctx context.Context) {
 	slog.Info("Fetching Reddit content for stored topics...")
 
 	topics, err := db.GetAllTopics()
@@ -120,7 +128,6 @@ func FetchRedditContentForTopics() {
 	topicMap := mapTopicsToCategory(topics)
 
 	valkeyClient := clients.GetValkeyClient()
-	ctx := context.Background()
 
 	// Process each query
 	for _, category := range Categories {
@@ -133,6 +140,14 @@ func FetchRedditContentForTopics() {
 		for _, topic := range topicMap[category] {
 			after := ""
 			for {
+
+				select {
+				case <-ctx.Done():
+					slog.Warn("[FetchRedditContentForTopics] Context cancelled, stopping...")
+					return
+				default:
+				}
+
 				retryCount := 3
 				var posts []models.RedditPost
 				var nextAfter string
@@ -155,6 +170,14 @@ func FetchRedditContentForTopics() {
 
 				// Send each post to Kafka for processing
 				for _, post := range posts {
+
+					select {
+					case <-ctx.Done():
+						slog.Warn("[FetchRedditContentForTopics] Context cancelled, stopping...")
+						return
+					default:
+					}
+
 					dedupeKey := post.PostID
 					key := fmt.Sprintf("%s:%s", VALKEY_POSTS_KEY, dedupeKey)
 
@@ -185,7 +208,7 @@ func FetchRedditContentForTopics() {
 					}
 
 					// publish post to kafka
-					err = clients.PublishToKafka(post)
+					err = kafka_client.PublishToKafka(post)
 					if err != nil {
 						slog.Warn("Failed to publish to Kafka",
 							slog.String("topic", post.Topic),

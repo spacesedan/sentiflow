@@ -1,37 +1,22 @@
-package clients
+package kafka_client
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-// Kafka topic for Reddit posts
-const KafkaTopic = "reddit-content"
-
-// Kafka producer instance
 var producer *kafka.Producer
 
-// InitKafka initializes the Kafka producer
-func InitKafka() error {
-	var broker string
-
-	// Check if running in Docker (KAFKA_BROKER set)
-	if os.Getenv("KAFKA_BROKER") != "" {
-		broker = os.Getenv("KAFKA_BROKER")
-	} else {
-		broker = "localhost:29092"
-	}
-
-	slog.Info("Connecting to Kafka", slog.String("broker", broker))
+func InitKafkaProducer(cfg KafkaConfig) error {
+	slog.Info("[KafkaClient] Initializing Kafka Producer...")
 
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers":                     broker,
+		"bootstrap.servers":                     cfg.Broker,
 		"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
 		"api.version.request":                   "true",      // Ensure correct API version request
 		"enable.idempotence":                    true,
@@ -48,16 +33,20 @@ func InitKafka() error {
 	}
 
 	producer = p
-	slog.Info("Kafka Producer initialized")
+	slog.Info("[KafkaClient] Kafka Producer initialized successfully")
 	return nil
 }
 
-func CloseKafka() {
+func CloseKafkaProducer() {
+	slog.Info("[KafkaClient] Shutting down Kafka producer...")
 	if producer != nil {
 		slog.Info("[KafkaClient] Flushing Kafka producer before shutdown...")
-		producer.Flush(5000)
+		if remaining := producer.Flush(5000); remaining > 0 {
+			slog.Warn("[KafkaClient] Not all messages were delivered before shutdown",
+				slog.Int("remaining", remaining))
+		}
 		producer.Close()
-		slog.Info("Kafka producer shut down")
+		slog.Info("[KafkaClient] Kafka producer shut down")
 	}
 }
 
@@ -80,7 +69,7 @@ func PublishToKafka(post models.RedditPost) error {
 	}
 
 	// Construct the Kafka message with the Reddit Post ID as the key.
-	topic := KafkaTopic
+	topic := KAFKA_TOPIC
 	msg := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Key:            []byte(post.PostID),
@@ -88,7 +77,15 @@ func PublishToKafka(post models.RedditPost) error {
 	}
 
 	// Produce the message within this transaction.
-	if err := producer.Produce(msg, nil); err != nil {
+	for i := 0; i < 3; i++ {
+		err = producer.Produce(msg, nil)
+		if err == nil {
+			break
+		}
+		slog.Warn("[KafkaClient] Failed to produce message, retrying...",
+			slog.Int("attempt", i+1))
+	}
+	if err != nil {
 		// If producing fails, abort the transaction.
 		abortErr := producer.AbortTransaction(context.Background())
 		if abortErr != nil {
@@ -99,13 +96,22 @@ func PublishToKafka(post models.RedditPost) error {
 
 	// COMMIT the transaction. If this fails, you should decide how to handle it
 	// (log, retry, or propagate the error).
-	if err := producer.CommitTransaction(context.Background()); err != nil {
-		return fmt.Errorf("[KafkaClient] failed to commit transaction: %v", err)
+	var commitErr error
+	for i := 0; i < 3; i++ {
+		commitErr := producer.CommitTransaction(context.Background())
+		if commitErr == nil {
+			break
+		}
+		slog.Warn("[KafkaClient] Failed to commit transaction, retruing...",
+			slog.Int("attempt", i+1))
+	}
+	if commitErr != nil {
+		return fmt.Errorf("[KafkaClient] failed to commit transaction after 3 retries: %w", commitErr)
 	}
 
 	slog.Info("[KafkaClient] Published Reddit post to Kafka transactionally",
 		slog.String("topic", post.Topic),
-		slog.String("subreddit", post.Subreddit))
+		slog.String("post_id", post.PostID))
 
 	return nil
 }
