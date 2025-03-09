@@ -13,7 +13,8 @@ import (
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-const openAIPrompt = `Shorten each headline into a concise, **search-friendly phrase**. 
+const openAIPrompt = `
+Shorten each headline into a concise, **search-friendly phrase**. 
 **Important**: 
 - Preserve any **names or key entities** (e.g., people, companies, places) mentioned in the original text.
 - Assign **exactly one** of these categories:
@@ -44,11 +45,6 @@ You MUST return only **valid JSON**, formatted exactly as follows:
 - **Do NOT modify the URLs**—return them exactly as given.
 
 If you are unable to generate a valid response, return an **empty JSON object**:
-{
-    "topics": [
-        { "topic": "XXX", "category": "XXX", "url": "XXX" }
-    ]
-}
 `
 
 // GenerateTopicsFromHeadlines processes new headlines in batches, dedupes results, and merges them

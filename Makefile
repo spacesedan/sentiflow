@@ -108,4 +108,4 @@ reset_dynamodb: delete_table create_topics_table
 update_kafka_partitions:
 	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
 		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic reddit-content --partitions 6 --replication-factor 1
+		--create --if-not-exists --topic user-content --partitions 6 --replication-factor 1
