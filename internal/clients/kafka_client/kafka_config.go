@@ -2,7 +2,10 @@ package kafka_client
 
 import "os"
 
-const KAFKA_TOPIC = "user-content"
+const (
+	KAFKA_TOPIC_REDDIT_CONTENT      = "reddit-content"
+	KAFKA_TOPIC_UNCERTAIN_SENTIMENT = "uncertain-sentiment"
+)
 
 type KafkaConfig struct {
 	Broker  string

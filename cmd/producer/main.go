@@ -53,7 +53,7 @@ func main() {
 
 	redditFetchInterval, err := strconv.Atoi(os.Getenv("REDDIT_FETCH_INTERVAL"))
 	if err != nil {
-		redditFetchInterval = 30 // Default to 30 minutes (in seconds)
+		redditFetchInterval = 300 // Default to 5 minutes (in seconds)
 	}
 
 	topicTicker := time.NewTicker(time.Duration(topicFetchInterval) * time.Second)

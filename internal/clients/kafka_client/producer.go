@@ -51,7 +51,7 @@ func CloseKafkaProducer() {
 }
 
 // PublishToKafka sends a Reddit post to Kafka
-func PublishToKafka(post models.RedditPost) error {
+func PublishToKafka(topic string, post models.RedditPost) error {
 	// BEGIN the transaction for this batch (in this case, just 1 message).
 	if err := producer.BeginTransaction(); err != nil {
 		return fmt.Errorf("[KafkaClient] failed to begin transaction: %v", err)
@@ -69,7 +69,6 @@ func PublishToKafka(post models.RedditPost) error {
 	}
 
 	// Construct the Kafka message with the Reddit Post ID as the key.
-	topic := KAFKA_TOPIC
 	msg := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Key:            []byte(post.PostID),
