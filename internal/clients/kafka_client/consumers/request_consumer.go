@@ -13,7 +13,7 @@ import (
 
 var postBatchBuffer = utils.NewBatchBuffer[models.RedditPost]()
 
-func StartRequestConsumer(ctx context.Context, consumer *kafka.Consumer) {
+func StartRedditConsumer(ctx context.Context, consumer *kafka.Consumer) {
 	iterator := kafka_client.NewKafkaMessageIterator(ctx, consumer)
 	committer := kafka_client.NewCommitHandler(ctx, consumer)
 

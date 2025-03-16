@@ -84,16 +84,7 @@ func PublishToKafka(topic string, message interface{}) error {
 		return fmt.Errorf("[KafkaClient] failed to begin transaction: %v", err)
 	}
 
-	// Extract the PostID dynamically
-	var postID string
-
-	switch msg := message.(type) {
-	case models.RedditPost:
-		postID = msg.PostID
-		// TODO: add the logic for the Result object
-	default:
-		postID = "unknown"
-	}
+	postID := extractPostID(message)
 
 	// Serialize the message.
 	jsonData, err := json.Marshal(message)

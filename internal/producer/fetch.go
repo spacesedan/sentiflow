@@ -177,6 +177,10 @@ func FetchRedditContentForTopics(ctx context.Context) {
 						return
 					default:
 					}
+					// Ignore any reddit posts that have no text content content
+					if post.PostContent == "" {
+						continue
+					}
 
 					dedupeKey := post.PostID
 					key := fmt.Sprintf("%s:%s", VALKEY_POSTS_KEY, dedupeKey)
@@ -208,7 +212,7 @@ func FetchRedditContentForTopics(ctx context.Context) {
 					}
 
 					// publish post to kafka
-					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST, post)
+					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_REDDIT_CONTENT, post)
 					if err != nil {
 						slog.Warn("Failed to publish to Kafka",
 							slog.String("topic", post.Topic),

@@ -10,6 +10,11 @@ DOCKER_COMPOSE_FILE=$(DOCKER_DIR)/docker-compose.yml
 start_services:
 	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 
+
+.PHONY: start_services_attached
+start_services_attached:
+	docker compose -f $(DOCKER_COMPOSE_FILE) up
+
 .PHONY: stop_services
 stop_services:
 	docker compose -f $(DOCKER_COMPOSE_FILE) down
@@ -20,6 +25,9 @@ refresh_services:
 
 .PHONY: restart_services
 restart_services: refresh_services start_services
+
+.PHONY: restart_services_attached
+restart_services_attached: refresh_services start_services_attached
 
 .PHONY: service_logs
 service_logs:

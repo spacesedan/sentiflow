@@ -112,7 +112,28 @@ services:
   #   environment:
   #     - GF_SECURITY_ADMIN_USER=admin
   #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #
+  
+# BART Transformer Service (Summarization) using Hugging Face
+  bart:
+    image: ghcr.io/huggingface/transformers-pytorch-gpu
+    container_name: bart-service
+    ports:
+      - "8081:80"
+    environment:
+      - MODEL_NAME=facebook/bart-large-cnn
+    restart: always
+
+  # BERT Transformer Service (Sentiment Analysis) using Hugging Face
+  bert:
+    image: ghcr.io/huggingface/transformers-pytorch-gpu
+    container_name: bert-service
+    ports:
+      - "8082:80"
+    environment:
+      - MODEL_NAME=nlptown/bert-base-multilingual-uncased-sentiment
+    restart: always
+
+
 volumes:
   db_data:
   valkey_data:
