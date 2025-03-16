@@ -32,7 +32,7 @@ func main() {
 	logging.InitLogger()
 
 	for {
-		err := kafka_client.InitKafkaProducer(kafka_client.GetKafkaConfig())
+		err := kafka_client.InitProducer(kafka_client.GetKafkaConfig())
 		if err == nil {
 			break
 		}
@@ -40,7 +40,7 @@ func main() {
 		slog.Warn("Kafka init failed, retrying...", slog.String("error", err.Error()))
 		time.Sleep(5 * time.Second)
 	}
-	defer kafka_client.CloseKafkaProducer()
+	defer kafka_client.CloseProducer()
 
 	clients.InitValkey()
 	defer clients.CloseValkey()

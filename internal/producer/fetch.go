@@ -208,7 +208,7 @@ func FetchRedditContentForTopics(ctx context.Context) {
 					}
 
 					// publish post to kafka
-					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_REDDIT_CONTENT, post)
+					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST, post)
 					if err != nil {
 						slog.Warn("Failed to publish to Kafka",
 							slog.String("topic", post.Topic),

@@ -3,41 +3,68 @@ package kafka_client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"sync"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-var producer *kafka.Producer
+var (
+	producer *kafka.Producer
+	initOnce sync.Once
+)
 
-func InitKafkaProducer(cfg KafkaConfig) error {
-	slog.Info("[KafkaClient] Initializing Kafka Producer...")
-
-	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers":                     cfg.Broker,
-		"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
-		"api.version.request":                   "true",      // Ensure correct API version request
-		"enable.idempotence":                    true,
-		"acks":                                  "all",
-		"max.in.flight.requests.per.connection": 1,
-		"transactional.id":                      "sentiflow-producer-1",
-	})
-	if err != nil {
-		return fmt.Errorf("[KafkaClient] Failed to create producer: %w", err)
+func generateTransactionalID(baseID string) string {
+	envTransactionalID := os.Getenv("KAFKA_PRODUCER_ID")
+	if envTransactionalID != "" {
+		return envTransactionalID
 	}
 
-	if err := p.InitTransactions(context.Background()); err != nil {
-		return fmt.Errorf("[KafkaClient] Failed to init transactions: %w", err)
-	}
-
-	producer = p
-	slog.Info("[KafkaClient] Kafka Producer initialized successfully")
-	return nil
+	now := time.Now().Unix()
+	pid := os.Getpid()
+	return fmt.Sprintf("%s-%d-%d-producer", baseID, now, pid)
 }
 
-func CloseKafkaProducer() {
+func InitProducer(cfg KafkaConfig) error {
+	var initErr error
+
+	initOnce.Do(func() {
+		transactionalID := generateTransactionalID(cfg.Topic)
+		slog.Info("[KafkaClient] Initializing Kafka Producer...",
+			slog.String("transactional_id", transactionalID))
+
+		p, err := kafka.NewProducer(&kafka.ConfigMap{
+			"bootstrap.servers":                     cfg.Broker,
+			"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
+			"api.version.request":                   "true",      // Ensure correct API version request
+			"enable.idempotence":                    true,
+			"acks":                                  "all",
+			"max.in.flight.requests.per.connection": 1,
+			"transactional.id":                      transactionalID,
+		})
+		if err != nil {
+			initErr = fmt.Errorf("[KafkaClient] Failed to create producer: %w", err)
+			return
+		}
+
+		if err := p.InitTransactions(context.Background()); err != nil {
+			initErr = fmt.Errorf("[KafkaClient] Failed to init transactions: %w", err)
+			return
+		}
+
+		producer = p
+		slog.Info("[KafkaClient] Kafka Producer initialized successfully",
+			slog.String("transactional_id", transactionalID))
+	})
+	return initErr
+}
+
+func CloseProducer() {
 	slog.Info("[KafkaClient] Shutting down Kafka producer...")
 	if producer != nil {
 		slog.Info("[KafkaClient] Flushing Kafka producer before shutdown...")
@@ -51,14 +78,25 @@ func CloseKafkaProducer() {
 }
 
 // PublishToKafka sends a Reddit post to Kafka
-func PublishToKafka(topic string, post models.RedditPost) error {
+func PublishToKafka(topic string, message interface{}) error {
 	// BEGIN the transaction for this batch (in this case, just 1 message).
 	if err := producer.BeginTransaction(); err != nil {
 		return fmt.Errorf("[KafkaClient] failed to begin transaction: %v", err)
 	}
 
-	// Serialize the Reddit post.
-	jsonData, err := json.Marshal(post)
+	// Extract the PostID dynamically
+	var postID string
+
+	switch msg := message.(type) {
+	case models.RedditPost:
+		postID = msg.PostID
+		// TODO: add the logic for the Result object
+	default:
+		postID = "unknown"
+	}
+
+	// Serialize the message.
+	jsonData, err := json.Marshal(message)
 	if err != nil {
 		// If serialization fails, abort the transaction.
 		abortErr := producer.AbortTransaction(context.Background())
@@ -71,7 +109,7 @@ func PublishToKafka(topic string, post models.RedditPost) error {
 	// Construct the Kafka message with the Reddit Post ID as the key.
 	msg := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-		Key:            []byte(post.PostID),
+		Key:            []byte(postID),
 		Value:          jsonData,
 	}
 
@@ -85,32 +123,47 @@ func PublishToKafka(topic string, post models.RedditPost) error {
 			slog.Int("attempt", i+1))
 	}
 	if err != nil {
-		// If producing fails, abort the transaction.
-		abortErr := producer.AbortTransaction(context.Background())
-		if abortErr != nil {
-			return fmt.Errorf("[KafkaClient] failed to abort transaction after produce error: %v", abortErr)
-		}
+		abortTransaction()
 		return err
 	}
 
 	// COMMIT the transaction. If this fails, you should decide how to handle it
 	// (log, retry, or propagate the error).
-	var commitErr error
-	for i := 0; i < 3; i++ {
-		commitErr := producer.CommitTransaction(context.Background())
-		if commitErr == nil {
-			break
-		}
-		slog.Warn("[KafkaClient] Failed to commit transaction, retruing...",
-			slog.Int("attempt", i+1))
-	}
-	if commitErr != nil {
-		return fmt.Errorf("[KafkaClient] failed to commit transaction after 3 retries: %w", commitErr)
+	if err := commitTransaction(); err != nil {
+		return err
 	}
 
 	slog.Info("[KafkaClient] Published Reddit post to Kafka transactionally",
-		slog.String("topic", post.Topic),
-		slog.String("post_id", post.PostID))
+		slog.String("topic", topic),
+		slog.String("post_id", postID))
 
 	return nil
+}
+
+func extractPostID(message interface{}) string {
+	switch msg := message.(type) {
+	case models.RedditPost:
+		return msg.PostID
+	default:
+		return "unknown"
+	}
+}
+
+func abortTransaction() {
+	if err := producer.AbortTransaction(context.Background()); err != nil {
+		slog.Warn("[KafkaClient] Failed to abort transaction",
+			slog.String("error", err.Error()))
+	}
+}
+
+func commitTransaction() error {
+	for i := 0; i < 3; i++ {
+		if err := producer.CommitTransaction(context.Background()); err == nil {
+			return nil
+		}
+		slog.Warn("[KafkaClient] Failed to commit transaction, retrying...",
+			slog.Int("attempt", i+1))
+	}
+
+	return errors.New("[KafkaClient] Failed to commit transaction after 3 retries")
 }
