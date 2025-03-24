@@ -3,9 +3,7 @@ package topicgeneration
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -110,8 +108,6 @@ func processHeadlineBatch(ctx context.Context, storedTopics []models.Topic) erro
 			slog.String("error", err.Error()))
 		return err
 	}
-
-	os.WriteFile(fmt.Sprintf("./data/updated-generation-%d.json", time.Now().UnixNano()), []byte(cleanedResponse), 0644)
 
 	return nil
 }
