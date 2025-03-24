@@ -170,23 +170,36 @@ JSON response structure:
 }
 
 func cleanOpenAIResponse(response string) string {
-	// Trim unnecessary whitespace
 	response = strings.TrimSpace(response)
 
+	// Find the first '{' and the last '}' to extract only JSON.
+	startIdx := strings.Index(response, "{")
+	endIdx := strings.LastIndex(response, "}")
+
+	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
+		slog.Error("Could not extract valid JSON from OpenAI response", slog.String("raw_response", response))
+		return "" // or handle the error appropriately
+	}
+
+	response = response[startIdx : endIdx+1]
+
+	// Remove Markdown code block if present.
 	response = strings.TrimPrefix(response, "```json")
 	response = strings.TrimSuffix(response, "```")
 
-	// Standardize quotes in case OpenAI outputs them incorrectly
-	response = strings.ReplaceAll(response, "\u0022", `"`) // Replace Unicode quotes
-	response = strings.ReplaceAll(response, "\u201C", `"`) // Left curly quote
-	response = strings.ReplaceAll(response, "\u201D", `"`) // Right curly quote
+	// Standardize quotes
+	response = strings.ReplaceAll(response, "\u0022", `"`)
+	response = strings.ReplaceAll(response, "\u201C", `"`)
+	response = strings.ReplaceAll(response, "\u201D", `"`)
 
-	return strings.TrimSpace(response) // Final trim
+	return strings.TrimSpace(response)
 }
 
 // removeLocalDuplicates ensures the newly generated batch from OpenAI
 // doesn't contain duplicates among itself (by URL).
 func removeLocalDuplicates(topics []models.Topic) []models.Topic {
+	slog.Info("[TopicGenerator] Removing duplicate generated topics",
+		slog.Int("starting", len(topics)))
 	seen := make(map[string]struct{})
 	var unique []models.Topic
 	for _, t := range topics {
@@ -195,11 +208,14 @@ func removeLocalDuplicates(topics []models.Topic) []models.Topic {
 			unique = append(unique, t)
 		}
 	}
+	slog.Info("[TopicGenerator] Successfully removed generated topics",
+		slog.Int("ending", len(unique)))
 	return unique
 }
 
 // filterAgainstStored removes any topics whose URL is already in storedTopics
 func filterAgainstStored(newTopics []models.Topic, storedTopics []models.Topic) []models.Topic {
+	slog.Info("[TopicGenerator] Removing topics that have been previously stored", slog.Int("starting", len(newTopics)))
 	storedSet := make(map[string]struct{}, len(storedTopics))
 	for _, st := range storedTopics {
 		storedSet[st.URL] = struct{}{}
@@ -211,5 +227,8 @@ func filterAgainstStored(newTopics []models.Topic, storedTopics []models.Topic) 
 			final = append(final, t)
 		}
 	}
+
+	slog.Info("[TopicGenerator] Successfully filtered out generated topics",
+		slog.Int("ending", len(final)))
 	return final
 }
