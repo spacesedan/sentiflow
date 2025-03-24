@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	BATCH_SIZE    = 50
+	BATCH_SIZE    = 10
 	BATCH_TIMEOUT = time.Second * 5
 )
 
@@ -54,7 +54,24 @@ func (b *BatchBuffer[T]) HasData() bool {
 	return len(b.buffer) > 0
 }
 
+func (b *BatchBuffer[T]) Peek() []T {
+	b.bufferLock.Lock()
+	defer b.bufferLock.Unlock()
+
+	return append([]T(nil), b.buffer...)
+}
+
+func (b *BatchBuffer[T]) Flush() {
+	b.bufferLock.Lock()
+	defer b.bufferLock.Unlock()
+
+	b.buffer = make([]T, 0, BATCH_SIZE)
+}
+
 func (b *BatchBuffer[T]) LogBatchProcessing(batchType string) {
+	b.bufferLock.Lock()
+	defer b.bufferLock.Unlock()
+
 	slog.Info("[BatchBuffer] Processing batch",
 		slog.String("type", batchType),
 		slog.Int("batch_size", len(b.buffer)))

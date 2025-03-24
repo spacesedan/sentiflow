@@ -14,60 +14,6 @@ import (
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func FetchAndStoreTopics(ctx context.Context) {
-	slog.Info("[FetchAndStoreTopics] Fetching new topics...")
-
-	maxRetries := 3
-	start := time.Now()
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-
-		select {
-		case <-ctx.Done():
-			slog.Warn("[FetchAndStoreTopics] Context cancelled, stopping...")
-		default:
-		}
-
-		slog.Info("[FetchAndStoreTopics] Attempt", slog.Int("atttemp", attempt))
-
-		// Rate limited :(
-		headlines, err := clients.GetNewsAPIClient().GetTopHeadlinesByCategory()
-		if err != nil {
-			slog.Warn("[FetchAndStoreTopics] Failed to fetch latested headlines from NewsAPI, retrying...",
-				slog.String("error", err.Error()))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		// For when NewsAPI account gets rate-limited
-		// headlines, err := clients.GetNewsAPIClient().GetTopHeadlinesFromFile()
-		// if err != nil {
-		// 	slog.Warn("[FetchAndStoreTopics] Failed to fetch latested headlines from NewsAPI, retrying...",
-		// 		slog.String("error", err.Error()))
-		// 	time.Sleep(5 * time.Second)
-		// 	continue
-		// }
-
-		topics, err := GenerateTopicsFromHeadlines(headlines)
-		if err != nil {
-			slog.Warn("[FetchAndStoreTopics] Failed to generate topics, retrying...", slog.String("error", err.Error()))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		err = db.StoreBatchedTopics(topics.Topics)
-		if err != nil {
-			slog.Error("[FetchAndStoreTopics] Failed to store topics in DB", slog.String("error", err.Error()))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		slog.Info("[FetchAndStoreTopics] Successfully stored generated topics to DB", slog.Duration("duration", time.Since(start)))
-		return
-	}
-
-	slog.Error("Maximum retries reached, skipping this fetch cycle")
-}
-
 var CategoryToSubreddits = map[string][]string{
 	"Technology":                  {"technology", "Futurology", "programming", "gadgets", "techsupport"},
 	"Business & Finance":          {"wallstreetbets", "investing", "finance", "personalfinance", "entrepreneur"},
@@ -211,13 +157,15 @@ func FetchRedditContentForTopics(ctx context.Context) {
 						}
 					}
 
+					rawContent := redditPostToRaw(post)
+
 					// publish post to kafka
-					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_REDDIT_CONTENT, post)
+					err = kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_RAW_CONTENT, rawContent)
 					if err != nil {
 						slog.Warn("Failed to publish to Kafka",
-							slog.String("topic", post.Topic),
-							slog.String("post_id", post.PostID),
-							slog.String("subreddit", post.Subreddit),
+							slog.String("topic", rawContent.Topic),
+							slog.String("post_id", rawContent.ContentID),
+							slog.String("subreddit", rawContent.Metadata.Subreddit),
 							slog.String("error", err.Error()))
 					}
 				}
@@ -231,4 +179,18 @@ func FetchRedditContentForTopics(ctx context.Context) {
 	}
 
 	slog.Info("Successfully fetched & sent Reddit content to Kafka!")
+}
+
+func redditPostToRaw(p models.RedditPost) models.RawContent {
+	return models.RawContent{
+		ContentID: p.PostID,
+		Source:    "reddit",
+		Topic:     p.Topic,
+		Text:      p.PostContent,
+		Metadata: models.ContentMetadata{
+			Author:    p.Author,
+			Timestamp: p.CreatedAt,
+			Subreddit: p.Subreddit,
+		},
+	}
 }

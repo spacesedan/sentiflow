@@ -12,6 +12,11 @@ services:
     image: bitnami/kafka:latest
     container_name: kafka
     restart: always
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
     environment:
       - KAFKA_BROKER_ID=1
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
@@ -21,26 +26,108 @@ services:
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
       - ALLOW_PLAINTEXT_LISTENER=yes
     ports:
-      - "9092:9092"  # Kafka for Docker containers
-      - "29092:29092" # Kafka for local machine access
-    # volumes:
-    #   - ./kafka/scripts/init-kafka.sh:/docker-entrypoint-initdb.d/init-kafka.sh
+      - "9092:9092"
+      - "29092:29092"
+    volumes:
+      - ./deploy/docker/kafka/scripts/:/docker-entrypoint-initdb.d/
     depends_on:
       - zookeeper
+
 
   kafdrop:
     image: obsidiandynamics/kafdrop
     container_name: kafdrop
     restart: always
     ports:
-      - "9000:9000"  # ✅ Exposes Kafdrop UI on localhost
+      - "9000:9000"
     environment:
-      - KAFKA_BROKERCONNECT=kafka:9092  # ✅ Connects to Kafka inside Docker
-      - SERVER_SERVLET_CONTEXTPATH=/    # ✅ Ensures UI loads properly
-      - JVM_OPTS=-Xms32M -Xmx64M  # ✅ Limits memory usage
+      - KAFKA_BROKERCONNECT=kafka:9092
+      - SERVER_SERVLET_CONTEXTPATH=/
+      - JVM_OPTS=-Xms32M -Xmx64M
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
 
+
+  # ---------------------------------------------------
+  # Kafka Init
+  # ---------------------------------------------------
+  kafka-init:
+    image: bitnami/kafka:latest
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+      echo '[kafka-init] Waiting for Kafka...';
+      until kafka-topics.sh --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 2; done;
+      echo '[kafka-init] Creating topics...';
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic raw-content --partitions 6 --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic summary-request --partitions 3 --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-request --partitions 3 --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-results --partitions 3 --replication-factor 1;
+      echo '[kafka-init] ✅ Done creating topics.';
+      "
+    restart: "no"
+
+  # ---------------------------------------------------
+  # Kafka Consumers
+  # ---------------------------------------------------
+
+  # Raw Content Consumer
+  raw-content-consumer:
+    build:
+      context: ../../
+      dockerfile: cmd/consumer/Dockerfile
+    container_name: raw-content-consumer
+    volumes:
+      - ./config/envs/.env.dev:/app/config/envs/.env.dev
+    environment:
+      APP_ENV: dev
+      KAFKA_BROKER: kafka:9092
+      KAFKA_CONSUMER_GROUP_ID: sentiflow-raw-consumer-group
+      KAFKA_CONSUMER_TOPIC: raw-content
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Summary Consumer
+  summary-consumer:
+    build:
+      context: ../../
+      dockerfile: cmd/consumer/Dockerfile
+    container_name: summary-consumer
+    volumes:
+      - ../../config/envs/.env.dev:/app/config/envs/.env.dev
+    environment:
+      APP_ENV: dev
+      KAFKA_BROKER: kafka:9092
+      KAFKA_CONSUMER_GROUP_ID: sentiflow-summary-consumer-group
+      KAFKA_CONSUMER_TOPIC: summary-request
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Sentiment Consumer
+  sentiment-analysis-consumer:
+    build:
+      context: ../../
+      dockerfile: cmd/consumer/Dockerfile
+    container_name: sentiment-analysis-consumer
+    volumes:
+      - ../../config/envs/.env.dev:/app/config/envs/.env.dev
+    environment:
+      APP_ENV: dev
+      KAFKA_BROKER: kafka:9092
+      KAFKA_CONSUMER_GROUP_ID: sentiflow-sentiment-consumer-group
+      KAFKA_CONSUMER_TOPIC: sentiment-request
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
   # ---------------------------------------------------
   # DynamoDB Local
   # ---------------------------------------------------
@@ -112,27 +199,6 @@ services:
   #   environment:
   #     - GF_SECURITY_ADMIN_USER=admin
   #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  
-# BART Transformer Service (Summarization) using Hugging Face
-  bart:
-    image: ghcr.io/huggingface/transformers-pytorch-gpu
-    container_name: bart-service
-    ports:
-      - "8081:80"
-    environment:
-      - MODEL_NAME=facebook/bart-large-cnn
-    restart: always
-
-  # BERT Transformer Service (Sentiment Analysis) using Hugging Face
-  bert:
-    image: ghcr.io/huggingface/transformers-pytorch-gpu
-    container_name: bert-service
-    ports:
-      - "8082:80"
-    environment:
-      - MODEL_NAME=nlptown/bert-base-multilingual-uncased-sentiment
-    restart: always
-
 
 volumes:
   db_data:

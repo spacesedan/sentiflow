@@ -19,6 +19,6 @@ func GetKafkaConfig() KafkaConfig {
 	return KafkaConfig{
 		Broker:  getEnv("KAFKA_BROKER", "localhost:29092"),
 		GroupID: getEnv("KAFKA_CONSUMER_GROUP_ID", "sentiflow-consumer-group"),
-		Topic:   getEnv("KAFKA_CONSUMER_TOPIC", KAFKA_TOPIC_SENTIMENT_BATCHES),
+		Topic:   getEnv("KAFKA_CONSUMER_TOPIC", KAFKA_TOPIC_RAW_CONTENT),
 	}
 }

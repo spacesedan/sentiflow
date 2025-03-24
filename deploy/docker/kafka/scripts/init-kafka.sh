@@ -1,24 +1,18 @@
 #!/bin/bash
 
-echo "Waiting for Kafka to be ready..."
+set -e
+echo "[init-kafka.sh] Creating Kafka topics..."
 
-MAX_RETRIES=20 # Increase retries to wait longer (20 * 5s = 100s max)
-RETRY_COUNT=0
+kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+    --topic raw-content --partitions 6 --replication-factor 1
 
-sleep 15
+kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+    --topic summary-request --partitions 3 --replication-factor 1
 
-while ! /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list &>/dev/null; do
-    if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
-        echo "Kafka did not become available within time limit. Exiting..."
-        exit 1
-    fi
-    echo "Kafka is not available yet. Sleeping for 5 seconds..."
-    sleep 5
-    ((RETRY_COUNT++))
-done
+kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+    --topic sentiment-request --partitions 3 --replication-factor 1
 
-echo "Kafka is ready. Creating topic..."
-/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-    --create --if-not-exists --topic reddit-content --partitions 6 --replication-factor 1
+kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+    --topic sentiment-results --partitions 3 --replication-factor 1
 
-echo "Kafka topic setup complete!"
+echo "[init-kafka.sh] Topic creation completed."

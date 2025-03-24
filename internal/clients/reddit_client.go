@@ -22,7 +22,6 @@ const (
 	REDDIT_AUTH_URL   = "https://www.reddit.com/api/v1/access_token"
 	REDDIT_API_URL    = "https://oauth.reddit.com"
 	REDDIT_UNAUTH_URL = "https://www.reddit.com"
-	USER_AGENT        = "sentiflow-bot/0.1"
 )
 
 // Concurrency & Rate Limits
@@ -207,6 +206,7 @@ func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, str
 			Topic:       topic,
 			Subreddit:   post.Subreddit,
 			PostTitle:   post.Title,
+			Author:      post.AuthorFullname,
 			PostContent: post.Selftext,
 			Upvotes:     post.Ups,
 			CreatedAt:   time.Unix(int64(post.CreatedUTC), 0),

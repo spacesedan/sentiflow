@@ -135,6 +135,8 @@ func extractPostID(message interface{}) string {
 	switch msg := message.(type) {
 	case models.RedditPost:
 		return msg.PostID
+	case models.RawContent:
+		return msg.ContentID
 	default:
 		return "unknown"
 	}

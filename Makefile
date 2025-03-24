@@ -8,7 +8,7 @@ DOCKER_COMPOSE_FILE=$(DOCKER_DIR)/docker-compose.yml
 # Docker compose start stop services
 .PHONY: start_services
 start_services:
-	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) up --build -d
 
 
 .PHONY: start_services_attached
@@ -18,6 +18,10 @@ start_services_attached:
 .PHONY: stop_services
 stop_services:
 	docker compose -f $(DOCKER_COMPOSE_FILE) down
+
+.PHONY: build_services
+build_services:
+	docker compose -f $(DOCKER_COMPOSE_FILE) build --pull --no-cache
 
 .PHONY: refresh_services
 refresh_services:
@@ -37,6 +41,15 @@ service_logs:
 		exit 1; \
 	fi; \
 	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $$service
+
+.PHONY: service_shell
+service_shell:
+	@read -p "Enter the service name: " service; \
+	if [ -z "$$service" ]; then \
+		echo "ERROR: SERVICE is required!"; \
+		exit 1; \
+	fi; \
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec $$service sh -c "bash || sh"
 
 .PHONY: restart_image
 restart_image:
@@ -121,8 +134,19 @@ delete_table:
 .PHONY: reset_dynamodb
 reset_dynamodb: delete_table create_topics_table
 
-.PHONY: update_kafka_partitions
-update_kafka_partitions:
+.PHONY: create_kafka_topics
+create_kafka_topics:
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
+		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic raw-content --partitions 1 --replication-factor 1
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
+		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic summary-request --partitions 1 --replication-factor 1
 	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
 		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
 		--create --if-not-exists --topic sentiment-request --partitions 6 --replication-factor 1
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
+		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+		--create --if-not-exists --topic sentiment-results --partitions 1 --replication-factor 1
+
+

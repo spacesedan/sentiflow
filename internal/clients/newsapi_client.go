@@ -16,9 +16,6 @@ import (
 
 const (
 	NEWS_API_ENDPOINT = "https://newsapi.org/v2/top-headlines?country=us&pageSize=100&apiKey="
-	MAX_RETRIES       = 5
-	INITIAL_BACKOFF   = 1 * time.Second
-	MAX_BACKOFF       = 32 * time.Second
 )
 
 var (
