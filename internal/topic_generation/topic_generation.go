@@ -169,19 +169,6 @@ JSON response structure:
 	return messages
 }
 
-// chunkArticles splits a slice of NewsAPIArticles into groups of `size`.
-func chunkArticles(articles []models.NewsAPIArticles, size int) [][]models.NewsAPIArticles {
-	var batches [][]models.NewsAPIArticles
-	for i := 0; i < len(articles); i += size {
-		end := i + size
-		if end > len(articles) {
-			end = len(articles)
-		}
-		batches = append(batches, articles[i:end])
-	}
-	return batches
-}
-
 func cleanOpenAIResponse(response string) string {
 	// Trim unnecessary whitespace
 	response = strings.TrimSpace(response)
