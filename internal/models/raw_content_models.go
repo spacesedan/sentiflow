@@ -14,4 +14,6 @@ type ContentMetadata struct {
 	Timestamp time.Time `json:"timestamp"`
 	Author    string    `json:"author"`
 	Subreddit string    `json:"subreddit,omitempty"`
+	PostID    string    `json:"post_id,omitempty"`
+	URL       string    `json:"url,omitempty"`
 }

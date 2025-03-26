@@ -118,7 +118,8 @@ You will receive several news headlines as JSON objects.
 Respond ONLY with a valid JSON object, without any additional commentary.
 Each topic must have:
 
-- "title": Concise, clear, and easily searchable (queryable).
+- "title": The original title as it was sent.
+- "topic": Concise, clear, and easily searchable (queryable).
 - "category": One of the following predefined categories:
   - Technology
   - Business & Finance
@@ -135,7 +136,8 @@ JSON response structure:
 {
   "topics": [
     {
-      "title": "queryable title",
+      "title": "the original title",
+      "topic": "queryable version of the title",
       "category": "Predefined Category",
       "url": "original URL"
     },

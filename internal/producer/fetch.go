@@ -2,6 +2,8 @@ package producer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -204,16 +206,24 @@ func isPostProcessed(ctx context.Context, valkeyClient valkey.Client, key string
 	return exists
 }
 
+func generateRedditContentID(topic, source, postID string) string {
+	raw := fmt.Sprintf("%s:%s:%s", topic, source, postID)
+	hash := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(hash[:])
+}
+
 func redditPostToRaw(p models.RedditPost) models.RawContent {
+	source := "reddit"
 	return models.RawContent{
-		ContentID: p.PostID,
-		Source:    "reddit",
+		ContentID: generateRedditContentID(p.Topic, source, p.PostID),
+		Source:    source,
 		Topic:     p.Topic,
 		Text:      p.PostContent,
 		Metadata: models.ContentMetadata{
 			Author:    p.Author,
 			Timestamp: p.CreatedAt,
 			Subreddit: p.Subreddit,
+			PostID:    p.PostID,
 		},
 	}
 }
