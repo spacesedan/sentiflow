@@ -75,8 +75,8 @@ func (h *HuggingFaceClient) DoWithRetry(req *http.Request) (*http.Response, erro
 	return resp, err
 }
 
-func (h *HuggingFaceClient) GetSummary(input interface{}) (models.SummaryResponse, error) {
-	var result models.SummaryResponse
+func (h *HuggingFaceClient) GetSummaries(input interface{}) (models.SummaryBatchResponse, error) {
+	var result models.SummaryBatchResponse
 	slog.Info("[HuggingFaceClient] Requesting summary from summarization service")
 	start := time.Now()
 

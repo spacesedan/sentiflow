@@ -1,7 +1,7 @@
 package models
 
 type Topic struct {
-	Topic    string `json:"topic"`
+	Topic    string `json:"title"`
 	Category string `json:"category"`
 	URL      string `json:"url"`
 }

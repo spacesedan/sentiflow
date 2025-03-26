@@ -42,7 +42,7 @@ func StartSentimentAnalysisConsumer(ctx context.Context, consumer *kafka.Consume
 			var hfRequest models.SentimentAnalysisBatchRequest
 
 			for _, request := range requests {
-				hfRequest = append(hfRequest, models.SentimentAnalysisRequest{
+				hfRequest.Posts = append(hfRequest.Posts, models.SentimentAnalysisRequest{
 					ContentID: request.ContentID,
 					Text:      request.Text,
 				})

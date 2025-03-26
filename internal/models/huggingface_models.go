@@ -1,16 +1,29 @@
 package models
 
+type SummaryBatchRequest struct {
+	Inputs []SummaryRequest `json:"inputs"`
+}
+
 type SummaryRequest struct {
-	Inputs string `json:"inputs"`
+	ContentID string `json:"content_id"`
+	Text      string `json:"text"`
+}
+
+type SummaryBatchResponse struct {
+	Summaries []SummaryResponse `json:"summaries"`
 }
 
 type SummaryResponse struct {
-	Summary string `json:"summary"`
+	ContentID string `json:"content_id"`
+	Summary   string `json:"summary"`
+}
+
+type SentimentAnalysisBatchRequest struct {
+	Posts []SentimentAnalysisRequest `json:"posts"`
 }
 
 type (
-	SentimentAnalysisBatchRequest []SentimentAnalysisRequest
-	SentimentAnalysisRequest      struct {
+	SentimentAnalysisRequest struct {
 		ContentID string `json:"content_id"`
 		Text      string `json:"text"`
 	}
