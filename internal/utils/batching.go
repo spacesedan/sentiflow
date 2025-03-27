@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	BATCH_SIZE    = 10
-	BATCH_TIMEOUT = time.Second * 5
+	BATCH_SIZE        = 10
+	INSERT_BATCH_SIZE = 25
+	BATCH_TIMEOUT     = time.Second * 5
 )
 
 type BatchBuffer[T any] struct {

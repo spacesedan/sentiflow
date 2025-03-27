@@ -3,6 +3,7 @@ package consumers
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -14,7 +15,7 @@ import (
 
 var resultBuffer = utils.NewBatchBuffer[models.SentimentAnalysisResult]()
 
-func StartSentimentAnalysisConsumer(ctx context.Context, consumer *kafka.Consumer) {
+func StartSentimentAnalysisConsumer(ctx context.Context, consumer *kafka.Consumer, healthy ...*atomic.Bool) {
 	iterator := kafka_client.NewKafkaMessageIterator(ctx, consumer)
 	committer := kafka_client.NewCommitHandler(ctx, consumer)
 
@@ -46,6 +47,11 @@ func StartSentimentAnalysisConsumer(ctx context.Context, consumer *kafka.Consume
 					ContentID: request.ContentID,
 					Text:      request.Text,
 				})
+			}
+
+			if len(healthy) > 0 && healthy[0] != nil && !healthy[0].Load() {
+				slog.Warn("[SentimentAnalysisConsumer] Analyzer unhealthy - skipping sentiment analysis")
+				continue
 			}
 
 			sentimentScores, err := clients.GetHuggingFaceClient().GetBatchedSentimentAnalysis(hfRequest)

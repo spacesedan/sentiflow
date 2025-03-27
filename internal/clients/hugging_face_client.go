@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	HF_SUMMARY_ENDPOINT            = "https://spacesedan-summarizer.hf.space/summarize"
-	HF_SENTIMENT_ANALYSIS_ENDPOINT = "https://spacesedan-sentiment-analyzer.hf.space/analyze_batch"
+	HF_SUMMARY_ENDPOINT                   = "https://spacesedan-summarizer.hf.space/summarize"
+	HF_SUMMARY_HEALTH_ENDPOINT            = "https://spacesedan-summarizer.hf.space/"
+	HF_SENTIMENT_ANALYSIS_ENDPOINT        = "https://spacesedan-sentiment-analyzer.hf.space/analyze_batch"
+	HF_SENTIMENT_ANALYSIS_HEALTH_ENDPOINT = "https://spacesedan-sentiment-analyzer.hf.space/"
 )
 
 var (
@@ -108,6 +110,25 @@ func (h *HuggingFaceClient) GetBatchedSentimentAnalysis(input interface{}) (mode
 	slog.Info("[HuggingFaceClient] Sentiment Analysis request successful",
 		slog.Duration("elapsed", time.Since(start)))
 	return result, nil
+}
+
+func (h *HuggingFaceClient) SummarizerHealthCheck() bool {
+	return h.getHealthCheck(HF_SUMMARY_HEALTH_ENDPOINT)
+}
+
+func (h *HuggingFaceClient) AnalyzerHealthCheck() bool {
+	return h.getHealthCheck(HF_SENTIMENT_ANALYSIS_HEALTH_ENDPOINT)
+}
+
+func (h *HuggingFaceClient) getHealthCheck(endpoint string) bool {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
+
+	resp, err := h.Client.Do(req)
+
+	return resp.StatusCode == http.StatusOK
 }
 
 // helper function for posting data to my AI services
