@@ -49,7 +49,7 @@ func main() {
 	kafka_client.RegisterConsumer(kafka_client.KAFKA_TOPIC_SUMMARY_REQUEST, consumers.WrapConsumer(
 		consumers.StartSummaryConsumer, summarizerHealthy).WithHealthCheck(summarizerHealthy).Handler(),
 	)
-	kafka_client.RegisterConsumer(kafka_client.KAFKA_TOPIC_SUMMARY_REQUEST, consumers.WrapConsumer(
+	kafka_client.RegisterConsumer(kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST, consumers.WrapConsumer(
 		consumers.StartSentimentAnalysisConsumer, analyzerHealthy).WithHealthCheck(analyzerHealthy).Handler())
 	kafka_client.RegisterConsumer(kafka_client.KAFKA_TOPIC_SENTIMENT_RESULTS, consumers.StartResultsConsumer)
 

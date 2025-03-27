@@ -122,12 +122,22 @@ func (h *HuggingFaceClient) AnalyzerHealthCheck() bool {
 
 func (h *HuggingFaceClient) getHealthCheck(endpoint string) bool {
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", USER_AGENT)
 
 	resp, err := h.Client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
 
+	slog.Info("HEALTH CHECK",
+		slog.Int("statusCode", resp.StatusCode),
+		slog.String("endpoint", endpoint))
 	return resp.StatusCode == http.StatusOK
 }
 
