@@ -13,6 +13,12 @@
 bin/
 vendor/
 
+# Buf Code Generation
+gen/
+
+#MISC
+data/
+
 # Binary files
 *.exe
 *.dll

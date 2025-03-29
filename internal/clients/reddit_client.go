@@ -22,7 +22,6 @@ const (
 	REDDIT_AUTH_URL   = "https://www.reddit.com/api/v1/access_token"
 	REDDIT_API_URL    = "https://oauth.reddit.com"
 	REDDIT_UNAUTH_URL = "https://www.reddit.com"
-	USER_AGENT        = "sentiflow-bot/0.1"
 )
 
 // Concurrency & Rate Limits
@@ -65,6 +64,26 @@ func GetRedditClient() *RedditClient {
 	return redditClientInstance
 }
 
+func buildRedditAPIUrl(subreddit, topic, after string) (string, error) {
+	parsedUrl, err := url.Parse(fmt.Sprintf("%s/r/%s/search", REDDIT_API_URL, subreddit))
+	if err != nil {
+		return "", fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
+	}
+
+	queryParams := parsedUrl.Query()
+	queryParams.Add("q", topic)
+	queryParams.Add("sort", "relevance")
+	queryParams.Add("limit", "100")
+	queryParams.Add("t", "day")
+	queryParams.Add("type", "link")
+	if after != "" {
+		queryParams.Add("after", after)
+	}
+	parsedUrl.RawQuery = queryParams.Encode()
+
+	return parsedUrl.String(), nil
+}
+
 // RefreshClient updates the OAuth2 client with a new token
 func (rc *RedditClient) RefreshClient() {
 	rc.mu.Lock()
@@ -74,42 +93,24 @@ func (rc *RedditClient) RefreshClient() {
 }
 
 // FetchSubredditPosts fetches posts from a subreddit based on a given topic
-func (rc *RedditClient) FetchSubredditPosts(subreddit, topic, after string) ([]models.RedditPost, string, error) {
+func (rc *RedditClient) FetchSubredditPosts(ctx context.Context, subreddit, topic, after string) ([]models.RedditPost, string, error) {
 	slog.Info("[RedditClient] Requesting data from reddit",
 		slog.String("subreddits", subreddit),
 		slog.String("topic", topic))
-	parsedUrl, err := url.Parse(fmt.Sprintf("%s/r/%s/search", REDDIT_API_URL, subreddit))
+
+	url, err := buildRedditAPIUrl(subreddit, topic, after)
 	if err != nil {
-		return nil, "", fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
-	}
-	unauthUrl, err := url.Parse(fmt.Sprintf("%s/r/%s/search.json", REDDIT_UNAUTH_URL, subreddit))
-	if err != nil {
-		return nil, "", fmt.Errorf("[RedditClient] Failed to parse URL: %w", err)
+		return nil, "", err
 	}
 
-	queryParams := parsedUrl.Query()
-	queryParams.Add("q", topic)
-	queryParams.Add("sort", "top")
-	queryParams.Add("limit", "100")
-	queryParams.Add("t", "day")
-	queryParams.Add("type", "link+self")
-	if after != "" {
-		queryParams.Add("after", after)
-	}
-	parsedUrl.RawQuery = queryParams.Encode()
-	unauthUrl.RawQuery = queryParams.Encode()
-
-	// Test urls in local browser with out having oauth token
-	slog.Debug("[RedditClient] Unauth url for testing querys", slog.String("url", unauthUrl.String()))
-
-	req, err := http.NewRequest("GET", parsedUrl.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, "", err
 	}
 	req.Header.Set("User-Agent", USER_AGENT)
 
 	start := time.Now()
-	rawData, err := rc.doRequestWithBackoff(req, subreddit)
+	rawData, err := rc.doRequestWithBackoff(ctx, req, subreddit)
 	if err != nil {
 		return nil, "", err
 	}
@@ -121,7 +122,7 @@ func (rc *RedditClient) FetchSubredditPosts(subreddit, topic, after string) ([]m
 			slog.String("error", err.Error()))
 	}
 
-	slog.Info("[RedditClient] Response deatails",
+	slog.Info("[RedditClient] Response details",
 		slog.String("subreddits", subreddit),
 		slog.String("topic", topic),
 		slog.Int("post_count", len(posts)),
@@ -136,19 +137,29 @@ func (rc *RedditClient) FetchSubredditPosts(subreddit, topic, after string) ([]m
 }
 
 // doRequestWithBackoff executes the request with retry logic and token refresh handling
-func (rc *RedditClient) doRequestWithBackoff(req *http.Request, subreddit string) ([]byte, error) {
+func (rc *RedditClient) doRequestWithBackoff(ctx context.Context, req *http.Request, subreddit string) ([]byte, error) {
 	backoff := INITIAL_BACKOFF
 	for i := 0; i < MAX_RETRIES; i++ {
-		rc.WorkerTokens <- struct{}{} // Acquire worker slot
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case rc.WorkerTokens <- struct{}{}:
+
+		}
 		resp, err := rc.Client.Do(req)
 		<-rc.WorkerTokens // Release worker slot
 
 		if err != nil {
 			slog.Warn("[RedditClient] Request error, retrying...",
 				slog.String("subreddit", subreddit),
-				slog.Int("attempt", i+1))
-			time.Sleep(backoff)
-			continue
+				slog.Int("attempt", i+1),
+				slog.String("error", err.Error()))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				continue
+			}
 		}
 		defer resp.Body.Close()
 
@@ -156,7 +167,12 @@ func (rc *RedditClient) doRequestWithBackoff(req *http.Request, subreddit string
 		if remaining, reset := parseRateLimitHeaders(resp); remaining <= 1 {
 			slog.Warn("[RedditClient] Approaching rate limit. Sleeping until reset...",
 				slog.Duration("sleep", reset))
-			time.Sleep(reset)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(reset):
+				continue
+			}
 		}
 
 		switch resp.StatusCode {
@@ -167,28 +183,37 @@ func (rc *RedditClient) doRequestWithBackoff(req *http.Request, subreddit string
 
 		case http.StatusTooManyRequests:
 			slog.Warn("[RedditClient] 429 Too Many Requests - Backing off and retrying...")
-			time.Sleep(backoff)
-			backoff *= 2
-			if backoff > MAX_BACKOFF {
-				backoff = MAX_BACKOFF
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				backoff = minDuration(backoff*2, MAX_BACKOFF)
 			}
 			continue
 
 		case http.StatusOK:
-			bytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return nil, err
-			}
-			return bytes, nil
+			return io.ReadAll(resp.Body)
 
 		default:
 			slog.Warn("[RedditClient] Unexpected status code",
 				slog.Int("status", resp.StatusCode))
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				backoff = minDuration(backoff*2, MAX_BACKOFF)
+			}
 		}
 	}
 
 	return nil, fmt.Errorf("[RedditClient] Max retries reached for subreddit %s", subreddit)
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // parseRedditResponse parses the JSON response from Reddit API into structured RedditPost objects
@@ -207,6 +232,7 @@ func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, str
 			Topic:       topic,
 			Subreddit:   post.Subreddit,
 			PostTitle:   post.Title,
+			Author:      post.AuthorFullname,
 			PostContent: post.Selftext,
 			Upvotes:     post.Ups,
 			CreatedAt:   time.Unix(int64(post.CreatedUTC), 0),

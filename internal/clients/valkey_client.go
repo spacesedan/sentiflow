@@ -13,15 +13,15 @@ import (
 )
 
 var (
-	valkeyInstance *ValkeyInstance
+	valkeyInstance *ValkeyClient
 	valkeyOnce     sync.Once
 )
 
-type ValkeyInstance struct {
+type ValkeyClient struct {
 	Client valkey.Client
 }
 
-func InitValkey() *ValkeyInstance {
+func InitValkey() *ValkeyClient {
 	valkeyOnce.Do(func() {
 		valkeyAddr := os.Getenv("VALKEY_INIT_ADDRESS")
 		valkeyPassword := os.Getenv("VALKEY_PASSWORD")
@@ -55,7 +55,7 @@ func InitValkey() *ValkeyInstance {
 
 		slog.Info("[ValkeyClient] Successfully connected to valkey")
 
-		valkeyInstance = &ValkeyInstance{Client: client}
+		valkeyInstance = &ValkeyClient{Client: client}
 	})
 	return valkeyInstance
 }

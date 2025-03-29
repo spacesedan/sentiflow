@@ -7,35 +7,29 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-var consumer *kafka.Consumer
-
-func InitKafkaConsumer(cfg KafkaConfig) error {
-	slog.Info("[KafkaClient] Initializing Kafka Consumer...")
+func NewConsumer() (*kafka.Consumer, error) {
+	cfg := GetKafkaConfig()
+	slog.Info("[KafkaClient] Initializing Kafka Consumer...",
+		slog.String("broker", cfg.Broker),
+		slog.String("topic", cfg.Topic),
+		slog.String("group_id", cfg.GroupID))
 
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": cfg.Broker,
-		"group.id":          cfg.GroupID,
-		"auto.offset.reset": "earliest",
-		"isolation.level":   "read_committed",
+		"bootstrap.servers":  cfg.Broker,
+		"group.id":           cfg.GroupID,
+		"auto.offset.reset":  "earliest",
+		"enable.auto.commit": false,
+		"isolation.level":    "read_committed",
 	})
 	if err != nil {
-		return fmt.Errorf("[KafkaClient] Failed to create consumer: %w", err)
+		return nil, fmt.Errorf("[KafkaClient] Failed to create consumer: %w", err)
 	}
 
-	err = c.SubscribeTopics([]string{KAFKA_TOPIC}, nil)
+	err = c.SubscribeTopics([]string{cfg.Topic}, nil)
 	if err != nil {
-		return fmt.Errorf("[KafkaClient] Failed to subscribe to topics: %w", err)
+		return nil, fmt.Errorf("[KafkaClient] Failed to subscribe to topics: %w", err)
 	}
 
-	consumer = c
 	slog.Info("[KafkaClient] Kafka Consumer initialized successfully")
-	return nil
-}
-
-func CloseKafkaConsumer() {
-	slog.Info("[KafkaClient] Shutting down Kafka consumer...")
-	if consumer != nil {
-		consumer.Close()
-		slog.Info("[KafkaClient] Kafka consumer shut down")
-	}
+	return c, err
 }

@@ -5,6 +5,7 @@ import "time"
 type RedditPost struct {
 	Topic       string    `json:"topic"`
 	Subreddit   string    `json:"subreddit"`
+	Author      string    `json:"author"`
 	PostTitle   string    `json:"post_title"`
 	PostContent string    `json:"post_content"`
 	Upvotes     int       `json:"upvotes"`
@@ -26,11 +27,12 @@ type RedditAPIChild struct {
 }
 
 type RedditAPIClildData struct {
-	Subreddit  string  `json:"subreddit"`
-	Title      string  `json:"title"`
-	Selftext   string  `json:"selftext"`
-	Ups        int     `json:"ups"`
-	CreatedUTC float64 `json:"created_utc"`
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
+	Subreddit      string  `json:"subreddit"`
+	AuthorFullname string  `json:"author_fullname"`
+	Title          string  `json:"title"`
+	Selftext       string  `json:"selftext"`
+	Ups            int     `json:"ups"`
+	CreatedUTC     float64 `json:"created_utc"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
 }

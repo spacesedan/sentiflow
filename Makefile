@@ -8,11 +8,20 @@ DOCKER_COMPOSE_FILE=$(DOCKER_DIR)/docker-compose.yml
 # Docker compose start stop services
 .PHONY: start_services
 start_services:
-	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) up --build -d
+
+
+.PHONY: start_services_attached
+start_services_attached:
+	docker compose -f $(DOCKER_COMPOSE_FILE) up
 
 .PHONY: stop_services
 stop_services:
 	docker compose -f $(DOCKER_COMPOSE_FILE) down
+
+.PHONY: build_services
+build_services:
+	docker compose -f $(DOCKER_COMPOSE_FILE) build --pull --no-cache
 
 .PHONY: refresh_services
 refresh_services:
@@ -20,6 +29,9 @@ refresh_services:
 
 .PHONY: restart_services
 restart_services: refresh_services start_services
+
+.PHONY: restart_services_attached
+restart_services_attached: refresh_services start_services_attached
 
 .PHONY: service_logs
 service_logs:
@@ -29,6 +41,24 @@ service_logs:
 		exit 1; \
 	fi; \
 	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f $$service
+
+.PHONY: service_shell
+service_shell:
+	@read -p "Enter the service name: " service; \
+	if [ -z "$$service" ]; then \
+		echo "ERROR: SERVICE is required!"; \
+		exit 1; \
+	fi; \
+	docker compose -f $(DOCKER_COMPOSE_FILE) exec $$service sh -c "bash || sh"
+
+.PHONY: restart_image
+restart_image:
+	@read -p "Enter the service name: " service; \
+	if [ -z "$$service" ]; then \
+		echo "ERROR: SERVICE is required!"; \
+		exit 1; \
+	fi; \
+	docker compose -f $(DOCKER_COMPOSE_FILE) restart $$service
 # DynamoDB
 #
 TOPICS_TABLE_NAME=Topics
@@ -59,6 +89,35 @@ update_topics_table_ttl:
 .PHONY: create_topics_table
 create_topics_table: init_topics_table
 
+SENTIMENT_ANALYSIS_TABLE_NAME=SentimentResults
+
+.PHONY: init_sentiment_table
+init_sentiment_table:
+	@echo "Creating '$(SENTIMENT_ANALYSIS_TABLE_NAME)' table in local DynamoDB..."
+	aws dynamodb create-table \
+		--table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) \
+		--attribute-definitions \
+			AttributeName=content_id,AttributeType=S \
+		--key-schema \
+			AttributeName=content_id,KeyType=HASH \
+		--billing-mode PAY_PER_REQUEST \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
+.PHONY: update_sentiment_table_ttl
+update_sentiment_table_ttl:
+	@echo "Enabling TTL attribute on '$(SENTIMENT_ANALYSIS_TABLE_NAME)'..."
+	aws dynamodb update-time-to-live \
+		--table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) \
+		--time-to-live-specification "Enabled=true, AttributeName=ttl" \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
+.PHONY: create_sentiment_table
+create_sentiment_table: init_sentiment_table update_sentiment_table_ttl
+
+.PHONY: create_tables
+create_tables: create_topics_table create_sentiment_table
 
 .PHONY: list_tables
 list_tables:
@@ -70,42 +129,25 @@ describe_topics_table:
 	@echo "Describing the '$(TOPICS_TABLE_NAME)' table..."
 	aws dynamodb describe-table --table-name $(TOPICS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
-# Seed Sample Data
-.PHONY: seed_data
-seed_data:
-	@echo "Seeding sample data into '$(TOPICS_TABLE_NAME)'..."
-	aws dynamodb put-item \
-	    --table-name $(TOPICS_TABLE_NAME) \
-		--item "{ \
-			\"url\": {\"S\": \"https://example.com/article1\"}, \
-			\"category\": {\"S\": \"Technology\"}, \
-			\"title\": {\"S\": \"AI Breakthrough in 2025\"} \
-		}" \
-		--region $(AWS_REGION) \
-		--endpoint-url $(DYNAMODB_ENDPOINT)
-
-# Query a Specific Item
-.PHONY: query_item
-query_item:
-	@echo "Querying a specific topic from '$(TOPICS_TABLE_NAME)'..."
-	aws dynamodb get-item \
-	    --table-name $(TOPICS_TABLE_NAME) \
-	    --key '{"url": {"S": "https://example.com/article1"}}' \
-	    --region $(AWS_REGION) \
-	    --endpoint-url $(DYNAMODB_ENDPOINT)
+.PHONY: describe_sentiment_table
+describe_sentiment_table:
+	@echo "Describing the '$(SENTIMENT_ANALYSIS_TABLE_NAME)' table..."
+	aws dynamodb describe-table --table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
 # Delete All Tables
-.PHONY: delete_table
-delete_table:
+.PHONY: delete_topics_table
+delete_topics_table:
 	@echo "Deleting table '$(TOPICS_TABLE_NAME)'..."
 	aws dynamodb delete-table --table-name $(TOPICS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
-# Wipe Local DynamoDB Data (Delete & Recreate Table)
-.PHONY: reset_dynamodb
-reset_dynamodb: delete_table create_topics_table
+.PHONY: delete_sentiment_table
+delete_sentiment_table:
+	@echo "Deleting table '$(SENTIMENT_ANALYSIS_TABLE_NAME)'..."
+	aws dynamodb delete-table --table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: update_kafka_partitions
-update_kafka_partitions:
-	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
-		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic user-content --partitions 6 --replication-factor 1
+.PHONY: delete_tables
+delete_tables: delete_topics_table delete_sentiment_table
+
+.PHONY: reset_tables
+reset_dynamodb: delete_tables create_tables
+
