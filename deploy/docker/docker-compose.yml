@@ -112,11 +112,11 @@ services:
     restart: unless-stopped
 
   # Sentiment Consumer
-  sentiment-analysis-consumer:
+  analysis-consumer:
     build:
       context: ../../
       dockerfile: cmd/consumer/Dockerfile
-    container_name: sentiment-analysis-consumer
+    container_name: analysis-consumer
     volumes:
       - ../../config/envs/.env.dev:/app/config/envs/.env.dev
     environment:
@@ -128,6 +128,24 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  # Results Consumer
+  # results-consumer:
+  #   build:
+  #     context: ../../
+  #     dockerfile: cmd/consumer/Dockerfile
+  #   container_name: results-consumer
+  #   volumes:
+  #     - ../../config/envs/.env.dev:/app/config/envs/.env.dev
+  #   environment:
+  #     APP_ENV: dev
+  #     KAFKA_BROKER: kafka:9092
+  #     KAFKA_CONSUMER_GROUP_ID: sentiflow-result-consumer-group
+  #     KAFKA_CONSUMER_TOPIC: sentiment-results
+  #   depends_on:
+  #     kafka-init:
+  #       condition: service_completed_successfully
+  #   restart: unless-stopped
   # ---------------------------------------------------
   # DynamoDB Local
   # ---------------------------------------------------

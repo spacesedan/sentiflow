@@ -87,7 +87,7 @@ update_topics_table_ttl:
     --endpoint-url $(DYNAMODB_ENDPOINT)
 
 .PHONY: create_topics_table
-create_topics_table: init_topics_table update_topics_table_ttl
+create_topics_table: init_topics_table
 
 SENTIMENT_ANALYSIS_TABLE_NAME=SentimentResults
 
@@ -150,20 +150,4 @@ delete_tables: delete_topics_table delete_sentiment_table
 
 .PHONY: reset_tables
 reset_dynamodb: delete_tables create_tables
-
-.PHONY: create_kafka_topics
-create_kafka_topics:
-	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
-		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic raw-content --partitions 1 --replication-factor 1
-	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
-		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic summary-request --partitions 1 --replication-factor 1
-	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
-		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic sentiment-request --partitions 6 --replication-factor 1
-	docker compose -f $(DOCKER_COMPOSE_FILE) exec kafka \
-		/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-		--create --if-not-exists --topic sentiment-results --partitions 1 --replication-factor 1
-
 
