@@ -8,7 +8,7 @@ DOCKER_COMPOSE_FILE=$(DOCKER_DIR)/docker-compose.yml
 # Docker compose start stop services
 .PHONY: start_services
 start_services:
-	docker compose -f $(DOCKER_COMPOSE_FILE) up --build -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 
 
 .PHONY: start_services_attached
@@ -25,13 +25,23 @@ build_services:
 
 .PHONY: refresh_services
 refresh_services:
+	docker compose -f $(DOCKER_COMPOSE_FILE) down --remove-orphans
+
+.PHONY: refresh_services_v
+refresh_services_v:
 	docker compose -f $(DOCKER_COMPOSE_FILE) down -v --remove-orphans
 
 .PHONY: restart_services
 restart_services: refresh_services start_services
 
+.PHONY: restart_services_v
+restart_services_v: refresh_services_v start_services
+
 .PHONY: restart_services_attached
 restart_services_attached: refresh_services start_services_attached
+
+.PHONY: restart_services_attached_v
+restart_services_attached_v: refresh_services_v start_services_attached
 
 .PHONY: service_logs
 service_logs:

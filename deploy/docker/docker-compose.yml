@@ -28,11 +28,20 @@ services:
     ports:
       - "9092:9092"
       - "29092:29092"
-    volumes:
-      - ./deploy/docker/kafka/scripts/:/docker-entrypoint-initdb.d/
     depends_on:
       - zookeeper
 
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka_exporter
+    restart: always
+    ports:
+      - "9308:9308"
+    command:
+      - --kafka.server=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   kafdrop:
     image: obsidiandynamics/kafdrop
@@ -82,7 +91,7 @@ services:
       dockerfile: cmd/consumer/Dockerfile
     container_name: raw-content-consumer
     volumes:
-      - ./config/envs/.env.dev:/app/config/envs/.env.dev
+      - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:
       APP_ENV: dev
       KAFKA_BROKER: kafka:9092
@@ -100,7 +109,7 @@ services:
       dockerfile: cmd/consumer/Dockerfile
     container_name: summary-consumer
     volumes:
-      - ../../config/envs/.env.dev:/app/config/envs/.env.dev
+      - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:
       APP_ENV: dev
       KAFKA_BROKER: kafka:9092
@@ -118,7 +127,7 @@ services:
       dockerfile: cmd/consumer/Dockerfile
     container_name: analysis-consumer
     volumes:
-      - ../../config/envs/.env.dev:/app/config/envs/.env.dev
+      - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:
       APP_ENV: dev
       KAFKA_BROKER: kafka:9092
@@ -161,19 +170,19 @@ services:
   # ---------------------------------------------------
   # PostgreSQL
   # ---------------------------------------------------
-  db:
-    image: postgres:15
-    container_name: postgres_db
-    environment:
-      - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=mypassword
-      - POSTGRES_DB=mydb
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - ../../migrations:/migrations
-
+  # db:
+  #   image: postgres:15
+  #   container_name: postgres_db
+  #   environment:
+  #     - POSTGRES_USER=myuser
+  #     - POSTGRES_PASSWORD=mypassword
+  #     - POSTGRES_DB=mydb
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - db_data:/var/lib/postgresql/data
+  #     - ../../migrations:/migrations
+  #
   # ---------------------------------------------------
   # Valkey
   # ---------------------------------------------------
@@ -187,39 +196,62 @@ services:
     volumes:
       - valkey_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "mypassword", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    
+  redis-exporter:
+    image: oliver006/redis_exporter
+    container_name: redis_exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://valkey:6379
+      - REDIS_PASSWORD=mypassword
+    depends_on:
+      valkey:
+        condition: service_healthy
   # ---------------------------------------------------
   # Prometheus (NEW)
   # ---------------------------------------------------
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   container_name: prometheus
-  #   volumes:
-  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml
-  #     - prometheus_data:/prometheus
-  #   ports:
-  #     - "9090:9090"
-  #   depends_on:
-  #     - kafka
-  #     - db
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # ---------------------------------------------------
   # Grafana
   # ---------------------------------------------------
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   container_name: grafana
-  #   depends_on:
-  #     - prometheus
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - grafana_data:/var/lib/grafana
-  #   environment:
-  #     - GF_SECURITY_ADMIN_USER=admin
-  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
 
 volumes:
-  db_data:
+  # db_data:
   valkey_data:
-  # grafana_data:
-  # prometheus_data:
+  grafana_data:
+  prometheus_data:

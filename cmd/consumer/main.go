@@ -24,10 +24,9 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cfg := kafka_client.GetKafkaConfig()
 
 	for {
-		err := kafka_client.InitProducer(cfg)
+		err := kafka_client.InitProducer(ctx)
 		if err == nil {
 			break
 		}
@@ -53,7 +52,7 @@ func main() {
 		consumers.StartSentimentAnalysisConsumer, analyzerHealthy).WithHealthCheck(analyzerHealthy).Handler())
 	kafka_client.RegisterConsumer(kafka_client.KAFKA_TOPIC_SENTIMENT_RESULTS, consumers.StartResultsConsumer)
 
-	if err := kafka_client.StartConsumer(ctx, cfg); err != nil {
+	if err := kafka_client.StartConsumer(ctx); err != nil {
 		slog.Error("[Main] Failed to start consumer",
 			slog.String("error", err.Error()))
 	}

@@ -30,7 +30,7 @@ func StartRawContentConsumer(ctx context.Context, consumer *kafka.Consumer) {
 			slog.Warn("[RawContentConsumer] Stopping consumer...")
 			return
 		case <-ticker.C:
-			go sendBatchToKafka(committer)
+			go sendBatchToKafka(ctx, committer)
 		default:
 			msg, err := iterator.Next()
 			if err != nil {
@@ -53,7 +53,7 @@ func StartRawContentConsumer(ctx context.Context, consumer *kafka.Consumer) {
 			// if incoming message is longer than 1024 characters it needs to
 			// be summarized
 			if len(saInput.Text) > SUMMARY_THRESHOLD {
-				sendForSummary(committer, saInput)
+				sendForSummary(ctx, committer, saInput)
 				continue
 			}
 
@@ -61,17 +61,17 @@ func StartRawContentConsumer(ctx context.Context, consumer *kafka.Consumer) {
 			postBatchBuffer.Add(saInput)
 
 			if postBatchBuffer.Size() >= utils.BATCH_SIZE {
-				go sendBatchToKafka(committer)
+				go sendBatchToKafka(ctx, committer)
 			}
 
 		}
 	}
 }
 
-func sendForSummary(commiter *kafka_client.KafkaCommitHandler, content models.SentimentAnalysisInput) {
+func sendForSummary(ctx context.Context, commiter *kafka_client.KafkaCommitHandler, content models.SentimentAnalysisInput) {
 	// Publish the long message to be summarized
 	for i := 0; i < 3; i++ {
-		err := kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_SUMMARY_REQUEST, content)
+		err := kafka_client.PublishToKafka(ctx, kafka_client.KAFKA_TOPIC_SUMMARY_REQUEST, content)
 		if err == nil {
 			break
 		}
@@ -91,7 +91,7 @@ func sendForSummary(commiter *kafka_client.KafkaCommitHandler, content models.Se
 	}
 }
 
-func sendBatchToKafka(commiter *kafka_client.KafkaCommitHandler) {
+func sendBatchToKafka(ctx context.Context, commiter *kafka_client.KafkaCommitHandler) {
 	batch := postBatchBuffer.GetAndClear()
 	if len(batch) == 0 {
 		return
@@ -99,7 +99,7 @@ func sendBatchToKafka(commiter *kafka_client.KafkaCommitHandler) {
 
 	for i := 0; i < 3; i++ {
 
-		err := kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST, batch)
+		err := kafka_client.PublishToKafka(ctx, kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST, batch)
 		if err == nil {
 			break
 		}

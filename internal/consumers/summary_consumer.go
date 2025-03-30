@@ -34,7 +34,7 @@ func StartSummaryConsumer(ctx context.Context, consumer *kafka.Consumer, healthy
 			slog.Warn("[SummaryConsumer] Stopping consumer...")
 			return
 		case <-ticker.C:
-			processSummaryBatch(committer, h)
+			processSummaryBatch(ctx, committer, h)
 		default:
 			msg, err := iterator.Next()
 			if err != nil {
@@ -53,14 +53,14 @@ func StartSummaryConsumer(ctx context.Context, consumer *kafka.Consumer, healthy
 			utils.TrackMessage(summaryRequest.ContentID, msg)
 
 			if summaryBuffer.Size() > utils.BATCH_SIZE {
-				processSummaryBatch(committer, h)
+				processSummaryBatch(ctx, committer, h)
 			}
 
 		}
 	}
 }
 
-func processSummaryBatch(commiter *kafka_client.KafkaCommitHandler, healthy *atomic.Bool) {
+func processSummaryBatch(ctx context.Context, commiter *kafka_client.KafkaCommitHandler, healthy *atomic.Bool) {
 	var summaryErr error
 	var summaries models.SummaryBatchResponse
 
@@ -106,7 +106,7 @@ func processSummaryBatch(commiter *kafka_client.KafkaCommitHandler, healthy *ato
 		summarizedSAInputs = append(summarizedSAInputs, saInput)
 	}
 
-	sendForAnalysis(commiter, summarizedSAInputs)
+	sendForAnalysis(ctx, commiter, summarizedSAInputs)
 }
 
 func mapSummariesToContentID(summaries models.SummaryBatchResponse) map[string]models.SummaryResponse {
@@ -149,11 +149,12 @@ func sendBatchForSummary(batch []models.SentimentAnalysisInput) (models.SummaryB
 	return hfResponse, hfErr
 }
 
-func sendForAnalysis(commiter *kafka_client.KafkaCommitHandler, summarizedContent []models.SentimentAnalysisInput) {
+func sendForAnalysis(ctx context.Context, commiter *kafka_client.KafkaCommitHandler, summarizedContent []models.SentimentAnalysisInput) {
 	for _, content := range summarizedContent {
 		// Publish the summarized content to be analyzed
 		for attempt := 1; attempt <= 3; attempt++ {
 			err := kafka_client.PublishToKafka(
+				ctx,
 				kafka_client.KAFKA_TOPIC_SENTIMENT_REQUEST,
 				[]models.SentimentAnalysisInput{content},
 			)

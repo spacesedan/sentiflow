@@ -15,11 +15,16 @@ func NewConsumer() (*kafka.Consumer, error) {
 		slog.String("group_id", cfg.GroupID))
 
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":  cfg.Broker,
-		"group.id":           cfg.GroupID,
-		"auto.offset.reset":  "earliest",
-		"enable.auto.commit": false,
-		"isolation.level":    "read_committed",
+		"bootstrap.servers":        cfg.Broker,
+		"group.id":                 cfg.GroupID,
+		"auto.offset.reset":        "earliest",
+		"enable.auto.commit":       false,
+		"isolation.level":          "read_committed",
+		"session.timeout.ms":       10000,
+		"max.poll.interval.ms":     300000,
+		"reconnect.backoff.ms":     500,
+		"reconnect.backoff.max.ms": 10000,
+		"socket.keepalive.enable":  true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("[KafkaClient] Failed to create consumer: %w", err)

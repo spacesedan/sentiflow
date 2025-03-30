@@ -14,7 +14,6 @@ import (
 	"github.com/spacesedan/sentiflow/internal/clients/kafka_client"
 	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
-	"github.com/valkey-io/valkey-go"
 )
 
 var CategoryToSubreddits = map[string][]string{
@@ -57,8 +56,6 @@ func mapTopicsToCategory(topics []models.Topic) map[string][]models.Topic {
 	return topicMap
 }
 
-const VALKEY_POSTS_KEY = "reddit:processed_posts"
-
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka
 func FetchRedditContentForTopics(ctx context.Context) {
 	slog.Info("Fetching Reddit content for stored topics...")
@@ -75,7 +72,6 @@ func FetchRedditContentForTopics(ctx context.Context) {
 	}
 
 	topicMap := mapTopicsToCategory(topics)
-	valkeyClient := clients.GetValkeyClient()
 
 	// Process each query
 	for _, category := range Categories {
@@ -86,7 +82,7 @@ func FetchRedditContentForTopics(ctx context.Context) {
 		}
 
 		for _, topic := range topicMap[category] {
-			if err := fetchAndProcessTopics(ctx, subreddits, topic, valkeyClient); err != nil {
+			if err := fetchAndProcessTopics(ctx, subreddits, topic); err != nil {
 				slog.Error("Failed processing topic",
 					slog.String("topic", topic.Topic))
 			}
@@ -96,7 +92,7 @@ func FetchRedditContentForTopics(ctx context.Context) {
 	slog.Info("Successfully fetched & sent Reddit content to Kafka!")
 }
 
-func fetchAndProcessTopics(ctx context.Context, subreddits string, topic models.Topic, valkeyClient valkey.Client) error {
+func fetchAndProcessTopics(ctx context.Context, subreddits string, topic models.Topic) error {
 	after := ""
 	for {
 		select {
@@ -112,7 +108,7 @@ func fetchAndProcessTopics(ctx context.Context, subreddits string, topic models.
 			return fmt.Errorf("fetch failed after retries: %w", err)
 		}
 
-		processPosts(ctx, posts, valkeyClient)
+		processPosts(ctx, posts)
 		if nextAfter == "" {
 			break
 		}
@@ -147,7 +143,7 @@ func fetchWithRetries(ctx context.Context, subreddits, query, after string) ([]m
 	return nil, "", err
 }
 
-func processPosts(ctx context.Context, posts []models.RedditPost, valkeyClient valkey.Client) {
+func processPosts(ctx context.Context, posts []models.RedditPost) {
 	for _, post := range posts {
 		select {
 		case <-ctx.Done():
@@ -158,52 +154,25 @@ func processPosts(ctx context.Context, posts []models.RedditPost, valkeyClient v
 
 		dedupeKey := fmt.Sprintf("%s:%s", post.Topic, post.PostID)
 
-		if post.PostContent == "" || isPostProcessed(ctx, valkeyClient, dedupeKey) {
-			continue
-		}
-
-		if err := markPostProcessed(ctx, valkeyClient, dedupeKey); err != nil {
-			slog.Warn("Error marking post as processed",
-				slog.String("post_id", post.PostID),
-				slog.String("error", err.Error()))
+		if post.PostContent == "" || clients.GetValkeyClient().IsPostProcessed(ctx, "reddit", dedupeKey) {
 			continue
 		}
 
 		rawContent := redditPostToRaw(post)
-		if err := kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_RAW_CONTENT, rawContent); err != nil {
+		if err := kafka_client.PublishToKafka(ctx, kafka_client.KAFKA_TOPIC_RAW_CONTENT, rawContent); err != nil {
 			slog.Warn("Failed to publish to Kafka",
 				slog.String("post_id", rawContent.ContentID),
 				slog.String("error", err.Error()))
+			continue
 		}
-	}
-}
 
-func markPostProcessed(ctx context.Context, valkeyClient valkey.Client, key string) error {
-	repsonses := valkeyClient.DoMulti(ctx,
-		valkeyClient.B().Sadd().Key(VALKEY_POSTS_KEY).Member(key).Build(),
-		valkeyClient.B().Expire().Key(VALKEY_POSTS_KEY).Seconds(86400).Build(),
-	)
-
-	for _, resp := range repsonses {
-		if err := resp.Error(); err != nil {
-			return err
+		if err := clients.GetValkeyClient().MarkProcessed(ctx, "reddit", dedupeKey); err != nil {
+			slog.Warn("Error marking post as processed",
+				slog.String("post_id", post.PostID),
+				slog.String("error", err.Error()))
 		}
-	}
-	return nil
-}
 
-func isPostProcessed(ctx context.Context, valkeyClient valkey.Client, key string) bool {
-	exists, err := valkeyClient.Do(ctx,
-		valkeyClient.B().Sismember().Key(VALKEY_POSTS_KEY).Member(key).Build(),
-	).AsBool()
-	if err != nil {
-		slog.Warn("Valkey check error",
-			slog.String("dedupeKey", key),
-			slog.String("error", err.Error()))
-		return false
 	}
-
-	return exists
 }
 
 func generateRedditContentID(topic, source, postID string) string {

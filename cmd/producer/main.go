@@ -24,8 +24,10 @@ func main() {
 	config.LoadEnv(env)
 	logging.InitLogger()
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	for {
-		err := kafka_client.InitProducer(kafka_client.GetKafkaConfig())
+		err := kafka_client.InitProducer(ctx)
 		if err == nil {
 			break
 		}
@@ -51,8 +53,6 @@ func main() {
 	// Handle graceful shutdown
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	producer.FetchRedditContentForTopics(ctx)
 

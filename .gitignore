@@ -34,6 +34,7 @@ vendor/
 
 .env
 config/envs/.env*
+deploy/envs/.env.*
 
 #
 # Terraform Specific
