@@ -51,9 +51,9 @@ func createNewProducer(ctx context.Context) (*kafka.Producer, error) {
 	slog.Info("[KafkaClient] Initializing Kafka Producer...",
 		slog.String("transactional_id", transactionalID))
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers":                     cfg.Broker,
-		"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
-		"auto.create.topics.enable":             false,
+		"bootstrap.servers": cfg.Broker,
+		"security.protocol": "PLAINTEXT", // Force PLAINTEXT
+		// "auto.create.topics.enable":             false,
 		"api.version.request":                   "true", // Ensure correct API version request
 		"enable.idempotence":                    true,
 		"acks":                                  "all",
