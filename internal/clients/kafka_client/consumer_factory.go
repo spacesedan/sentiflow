@@ -14,7 +14,8 @@ func RegisterConsumer(topic string, consumerFunc func(context.Context, *kafka.Co
 	consumerRegistry[topic] = consumerFunc
 }
 
-func StartConsumer(ctx context.Context, cfg KafkaConfig) error {
+func StartConsumer(ctx context.Context) error {
+	cfg := GetKafkaConfig()
 	consumerFunc, exists := consumerRegistry[cfg.Topic]
 	if !exists {
 		return fmt.Errorf("[ConsumerFactory] No consumer found for topic: %s", cfg.Topic)

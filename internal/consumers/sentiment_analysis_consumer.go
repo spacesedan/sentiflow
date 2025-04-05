@@ -77,13 +77,13 @@ func StartSentimentAnalysisConsumer(ctx context.Context, consumer *kafka.Consume
 				})
 
 			}
-			sendResultsForStorage(committer)
+			sendResultsForStorage(ctx, committer)
 
 		}
 	}
 }
 
-func sendResultsForStorage(committer *kafka_client.KafkaCommitHandler) {
+func sendResultsForStorage(ctx context.Context, committer *kafka_client.KafkaCommitHandler) {
 	batch := resultBuffer.GetAndClear()
 	if len(batch) == 0 {
 		return
@@ -91,7 +91,7 @@ func sendResultsForStorage(committer *kafka_client.KafkaCommitHandler) {
 
 	for i := 0; i < 3; i++ {
 
-		err := kafka_client.PublishToKafka(kafka_client.KAFKA_TOPIC_SENTIMENT_RESULTS, batch)
+		err := kafka_client.PublishToKafka(ctx, kafka_client.KAFKA_TOPIC_SENTIMENT_RESULTS, batch)
 		if err == nil {
 			break
 		}

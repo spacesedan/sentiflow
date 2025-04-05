@@ -34,6 +34,10 @@ vendor/
 
 .env
 config/envs/.env*
+deploy/docker/envs/.env.*
+
+# Docker
+deploy/docker/dynamodb/*
 
 #
 # Terraform Specific

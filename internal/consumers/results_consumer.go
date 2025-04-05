@@ -29,6 +29,10 @@ func StartResultsConsumer(ctx context.Context, consumer *kafka.Consumer) {
 			processResults(ctx, committer)
 		default:
 			msg, err := iterator.Next()
+			if err != nil {
+				utils.HandleConsumerError(err)
+				continue
+			}
 
 			var results []models.SentimentAnalysisResult
 
