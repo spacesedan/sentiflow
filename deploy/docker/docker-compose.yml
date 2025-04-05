@@ -25,6 +25,8 @@ services:
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
       - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka_data:/bitnami/kafka
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -71,12 +73,33 @@ services:
       bash -c "
       echo '[kafka-init] Waiting for Kafka...';
       until kafka-topics.sh --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 2; done;
-      echo '[kafka-init] Creating topics...';
-      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic raw-content --partitions 6 --replication-factor 1;
-      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic summary-request --partitions 3 --replication-factor 1;
-      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-request --partitions 3 --replication-factor 1;
-      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-results --partitions 3 --replication-factor 1;
-      echo '[kafka-init] ✅ Done creating topics.';
+
+      create_or_update_topic() {
+        local topic=$$1
+        local desired_partitions=$$2
+        local replication_factor=$$3
+
+        echo \"[kafka-init] Checking topic '$$topic'...\"
+        if kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic \"$$topic\" > /tmp/topic_desc 2>&1; then
+          current_partitions=$$(grep 'PartitionCount:' /tmp/topic_desc | awk '{print $$2}')
+          if [ \"$$current_partitions\" -lt \"$$desired_partitions\" ]; then
+            echo \"[kafka-init] Updating partitions for '$$topic' from $$current_partitions to $$desired_partitions...\"
+            kafka-topics.sh --bootstrap-server kafka:9092 --alter --topic \"$$topic\" --partitions \"$$desired_partitions\"
+          else
+            echo \"[kafka-init] Topic '$$topic' already has $$current_partitions partitions — no update needed.\"
+          fi
+        else
+          echo \"[kafka-init] Creating topic '$$topic' with $$desired_partitions partitions...\"
+          kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic \"$$topic\" --partitions \"$$desired_partitions\" --replication-factor \"$$replication_factor\"
+        fi
+      }
+
+      create_or_update_topic raw-content 6 1
+      create_or_update_topic summary-request 3 1
+      create_or_update_topic sentiment-request 3 1
+      create_or_update_topic sentiment-results 3 1
+
+      echo '[kafka-init] Poop Topic setup complete.';
       "
     restart: "no"
 
@@ -139,6 +162,7 @@ services:
     restart: unless-stopped
 
   # Results Consumer
+    # missing AWS creds
   # results-consumer:
   #   build:
   #     context: ../../
@@ -190,9 +214,7 @@ services:
     image: valkey/valkey:latest
     ports:
       - "6379:6379"
-    environment:
-      - VALKEY_PASSWORD=mypassword
-      - VALKEY_USERNAME=myuser
+    command: ["valkey-server", "--requirepass", "mypassword"]
     volumes:
       - valkey_data:/data
     restart: unless-stopped
@@ -208,7 +230,7 @@ services:
     ports:
       - "9121:9121"
     environment:
-      - REDIS_ADDR=redis://valkey:6379
+      - REDIS_ADDR=tcp://valkey:6379
       - REDIS_PASSWORD=mypassword
     depends_on:
       valkey:
@@ -252,6 +274,7 @@ services:
 
 volumes:
   # db_data:
+  kafka_data:
   valkey_data:
   grafana_data:
   prometheus_data:

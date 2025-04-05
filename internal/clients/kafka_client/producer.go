@@ -53,7 +53,8 @@ func createNewProducer(ctx context.Context) (*kafka.Producer, error) {
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers":                     cfg.Broker,
 		"security.protocol":                     "PLAINTEXT", // Force PLAINTEXT
-		"api.version.request":                   "true",      // Ensure correct API version request
+		"auto.create.topics.enable":             false,
+		"api.version.request":                   "true", // Ensure correct API version request
 		"enable.idempotence":                    true,
 		"acks":                                  "all",
 		"max.in.flight.requests.per.connection": 1,
