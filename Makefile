@@ -96,9 +96,18 @@ update_topics_table_ttl:
     --region $(AWS_REGION) \
     --endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: create_topics_table
-create_topics_table: init_topics_table
 
+.PHONY: update_topics_table_enable_streams
+update_topics_table_enable_streams:
+	@echo "Enabling Event Streaming on '$(TOPICS_TABLE_NAME)' ... "
+	aws dynamodb update-table \
+		--table-name $(TOPICS_TABLE_NAME) \
+		--stream-specification "StreamEnabled=true, StreamViewType=NEW_IMAGE" \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
+.PHONY: create_topics_table
+create_topics_table: init_topics_table update_topics_table_ttl update_topics_table_enable_streams
 SENTIMENT_ANALYSIS_TABLE_NAME=SentimentResults
 
 .PHONY: init_sentiment_table
@@ -123,8 +132,17 @@ update_sentiment_table_ttl:
 		--region $(AWS_REGION) \
 		--endpoint-url $(DYNAMODB_ENDPOINT)
 
+.PHONY: update_sentiment_table_enable_streams
+update_sentiment_table_enable_streams:
+	@echo "Enabling Event Streaming on '$(SENTIMENT_ANALYSIS_TABLE_NAME)' ... "
+	aws dynamodb update-table \
+		--table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) \
+		--stream-specification "StreamEnabled=true, StreamViewType=NEW_IMAGE" \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
 .PHONY: create_sentiment_table
-create_sentiment_table: init_sentiment_table update_sentiment_table_ttl
+create_sentiment_table: init_sentiment_table update_sentiment_table_ttl update_sentiment_table_enable_streams
 
 .PHONY: create_tables
 create_tables: create_topics_table create_sentiment_table
@@ -159,5 +177,5 @@ delete_sentiment_table:
 delete_tables: delete_topics_table delete_sentiment_table
 
 .PHONY: reset_tables
-reset_dynamodb: delete_tables create_tables
+reset_tables: delete_tables create_tables
 
