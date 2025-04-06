@@ -162,6 +162,27 @@ describe_sentiment_table:
 	@echo "Describing the '$(SENTIMENT_ANALYSIS_TABLE_NAME)' table..."
 	aws dynamodb describe-table --table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
+.PHONY: scan_topics_table
+scan_topics_table:
+	@echo "Scanning the '$(TOPICS_TABLE_NAME)' table ..."
+	aws dynamodb scan \
+		--table-name $(TOPICS_TABLE_NAME) \
+		--limit 1 \
+		--output json \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
+
+.PHONY: scan_sentiment_table
+scan_sentiment_table:
+	@echo "Scanning the '$(SENTIMENT_ANALYSIS_TABLE_NAME)' table ..."
+	aws dynamodb scan \
+		--table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) \
+		--limit 1 \
+		--output json \
+		--region $(AWS_REGION) \
+		--endpoint-url $(DYNAMODB_ENDPOINT)
+
 # Delete All Tables
 .PHONY: delete_topics_table
 delete_topics_table:

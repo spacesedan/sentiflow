@@ -71,35 +71,17 @@ services:
         condition: service_healthy
     command: >
       bash -c "
-      echo '[kafka-init] Waiting for Kafka...';
-      until kafka-topics.sh --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 2; done;
+        echo '[kafka-init] Waiting for Kafka...';
+        until kafka-topics.sh --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 2; done;
 
-      create_or_update_topic() {
-        local topic=$$1
-        local desired_partitions=$$2
-        local replication_factor=$$3
+        echo '[kafka-init] Creating topics...';
 
-        echo \"[kafka-init] Checking topic '$$topic'...\"
-        if kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic \"$$topic\" > /tmp/topic_desc 2>&1; then
-          current_partitions=$$(grep 'PartitionCount:' /tmp/topic_desc | awk '{print $$2}')
-          if [ \"$$current_partitions\" -lt \"$$desired_partitions\" ]; then
-            echo \"[kafka-init] Updating partitions for '$$topic' from $$current_partitions to $$desired_partitions...\"
-            kafka-topics.sh --bootstrap-server kafka:9092 --alter --topic \"$$topic\" --partitions \"$$desired_partitions\"
-          else
-            echo \"[kafka-init] Topic '$$topic' already has $$current_partitions partitions — no update needed.\"
-          fi
-        else
-          echo \"[kafka-init] Creating topic '$$topic' with $$desired_partitions partitions...\"
-          kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic \"$$topic\" --partitions \"$$desired_partitions\" --replication-factor \"$$replication_factor\"
-        fi
-      }
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic raw-content --partitions 6 --replication-factor 1;
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic summary-request --partitions 3 --replication-factor 1;
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-request --partitions 3 --replication-factor 1;
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic sentiment-results --partitions 3 --replication-factor 1;
 
-      create_or_update_topic raw-content 6 1
-      create_or_update_topic summary-request 3 1
-      create_or_update_topic sentiment-request 3 1
-      create_or_update_topic sentiment-results 3 1
-
-      echo '[kafka-init] Poop Topic setup complete.';
+        echo '[kafka-init] ✅ Done creating topics.';
       "
     restart: "no"
 
@@ -235,6 +217,29 @@ services:
     depends_on:
       valkey:
         condition: service_healthy
+
+  # ---------------------------------------------------
+  # Opensearch
+  # ---------------------------------------------------
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - plugins.security.disabled=true # disable security for dev
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=sp@c3Sed4n
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
   # ---------------------------------------------------
   # Prometheus (NEW)
   # ---------------------------------------------------
@@ -274,6 +279,7 @@ services:
 
 volumes:
   # db_data:
+  opensearch_data:
   kafka_data:
   valkey_data:
   grafana_data:

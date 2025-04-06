@@ -2,13 +2,10 @@ package streams
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	ddbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams/types"
 	"github.com/spacesedan/sentiflow/internal/clients"
@@ -16,14 +13,14 @@ import (
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func StartTopicStreamConsumer(ctx context.Context) error {
+func StartSentimentStreamConsumer(ctx context.Context) error {
 	client := clients.GetDynamoDBStreamClient()
 
 	streams, err := client.ListStreams(ctx, &dynamodbstreams.ListStreamsInput{
-		TableName: aws.String(db.TOPICS_TABLE_NAME),
+		TableName: aws.String(db.SENTIMENT_ANALYSIS_TABLE_NAME),
 	})
 	if err != nil {
-		slog.Error("[TopicStreamConsumer] Error occured when listing streams...", slog.String("err", err.Error()))
+		slog.Error("[SentimentResultsStreamConsumer] Error occured when listing streams...", slog.String("err", err.Error()))
 		return err
 	}
 
@@ -33,7 +30,7 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 		StreamArn: streamArn,
 	})
 	if err != nil {
-		slog.Error("[TopicStreamConsumer] Failed to describe stream",
+		slog.Error("[SentimentResultsStreamConsumer] Failed to describe stream",
 			slog.String("error", err.Error()))
 		return err
 	}
@@ -46,7 +43,7 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 				ShardIteratorType: types.ShardIteratorTypeLatest,
 			})
 		if err != nil {
-			slog.Error("[TopicStreamConsumer] Failed to get shard iterator",
+			slog.Error("[SentimentResultsStreamConsumer] Failed to get shard iterator",
 				slog.String("shard_id", *shard.ShardId),
 				slog.String("error", err.Error()))
 
@@ -62,7 +59,7 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 					ShardIterator: shardIterator,
 				})
 			if err != nil {
-				slog.Error("[TopicStreamConsumer] Failed to get records",
+				slog.Error("[SentimentResultsStreamConsumer] Failed to get records",
 					slog.String("shard_id", *shard.ShardId),
 					slog.String("error", err.Error()))
 				break
@@ -75,19 +72,19 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 
 				newImage := record.Dynamodb.NewImage
 
-				var topic models.Topic
-				err := unmarshalStreamImage(newImage, &topic)
+				var result models.SentimentAnalysisResult
+				err := unmarshalStreamImage(newImage, &result)
 				if err != nil {
-					slog.Error("[TopicStreamConsumer] failed to unmarshal topic",
+					slog.Error("[SentimentResultsStreamConsumer] failed to unmarshal topic",
 						slog.String("error", err.Error()))
 					continue
 				}
 
-				slog.Info("[TopicStreamConsumer] Received new topic",
-					slog.String("topic", topic.Topic),
-					slog.String("category", topic.Category))
+				slog.Info("[SentimentResultsStreamConsumer] Received new result",
+					slog.String("result_id", result.ContentID),
+					slog.String("topic", result.Topic))
 
-				go processTopic(topic)
+				go processSentimentResult(result)
 
 			}
 			shardIterator = recordsOutput.NextShardIterator
@@ -97,18 +94,4 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 	return nil
 }
 
-func processTopic(topic models.Topic) {}
-
-func unmarshalStreamImage[T any](image map[string]types.AttributeValue, out *T) error {
-	rawJson, err := json.Marshal(image)
-	if err != nil {
-		return err
-	}
-
-	var ddbAttrs map[string]ddbTypes.AttributeValue
-	if err := json.Unmarshal(rawJson, &ddbAttrs); err != nil {
-		return err
-	}
-
-	return attributevalue.UnmarshalMap(ddbAttrs, out)
-}
+func processSentimentResult(result models.SentimentAnalysisResult) {}

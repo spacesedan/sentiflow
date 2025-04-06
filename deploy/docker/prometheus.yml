@@ -11,3 +11,6 @@ scrape_configs:
   - job_name: "valkey"
     static_configs:
       - targets: ["redis_exporter:9121"]
+  - job_name: "opensearch"
+    static_configs:
+      - targets: ["opensearch:9600"]
