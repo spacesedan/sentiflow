@@ -45,7 +45,7 @@ func StartResultsConsumer(ctx context.Context, consumer *kafka.Consumer) {
 			for _, result := range results {
 				utils.TrackMessage(result.ContentID, msg)
 				insertBuffer.Add(result)
-				if insertBuffer.Size() >= utils.INSERT_BATCH_SIZE {
+				if insertBuffer.Size() >= utils.DYNAMODB_BATCH_SIZE {
 					processResults(ctx, committer)
 				}
 			}

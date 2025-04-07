@@ -14,7 +14,23 @@ import (
 	"github.com/spacesedan/sentiflow/internal/clients"
 	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
+	"github.com/spacesedan/sentiflow/internal/utils"
 )
+
+var topicStreamBuffer = utils.NewBatchBuffer[models.Topic]()
+
+func StartTopicStreamBatchFlusher(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Second * 5)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if topicStreamBuffer.Size() > 0 {
+				processTopics(ctx)
+			}
+		}
+	}()
+}
 
 func StartTopicStreamConsumer(ctx context.Context) error {
 	client := clients.GetDynamoDBStreamClient()
@@ -87,7 +103,10 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 					slog.String("topic", topic.Topic),
 					slog.String("category", topic.Category))
 
-				go processTopic(topic)
+				topicStreamBuffer.Add(topic)
+				if topicStreamBuffer.Size() >= utils.STREAM_BATCH_SIZE {
+					go processTopics(ctx)
+				}
 
 			}
 			shardIterator = recordsOutput.NextShardIterator
@@ -97,7 +116,7 @@ func StartTopicStreamConsumer(ctx context.Context) error {
 	return nil
 }
 
-func processTopic(topic models.Topic) {}
+func processTopics(ctx context.Context) {}
 
 func unmarshalStreamImage[T any](image map[string]types.AttributeValue, out *T) error {
 	rawJson, err := json.Marshal(image)

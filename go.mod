@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.40.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.24.21
 	github.com/confluentinc/confluent-kafka-go v1.9.2
+	github.com/jackc/pgx/v5 v5.7.4
 	github.com/lmittmann/tint v1.0.7
 	github.com/opensearch-project/opensearch-go/v4 v4.4.0
 	github.com/sashabaranov/go-openai v1.38.1
@@ -33,7 +34,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.15 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )

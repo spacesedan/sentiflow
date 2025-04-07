@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	BATCH_SIZE        = 10
-	INSERT_BATCH_SIZE = 25
-	BATCH_TIMEOUT     = time.Second * 5
+	BATCH_SIZE          = 10
+	DYNAMODB_BATCH_SIZE = 25
+	STREAM_BATCH_SIZE   = 50
+	BATCH_TIMEOUT       = time.Second * 5
 )
 
 type BatchBuffer[T any] struct {

@@ -95,7 +95,7 @@ services:
       context: ../../
       dockerfile: cmd/consumer/Dockerfile
     container_name: raw-content-consumer
-    platform: linux/amd64
+    # platform: linux/amd64
     volumes:
       - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:
@@ -114,7 +114,7 @@ services:
       context: ../../
       dockerfile: cmd/consumer/Dockerfile
     container_name: summary-consumer
-    platform: linux/amd64
+    # platform: linux/amd64
     volumes:
       - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:
@@ -133,7 +133,7 @@ services:
       context: ../../
       dockerfile: cmd/consumer/Dockerfile
     container_name: analysis-consumer
-    platform: linux/amd64
+    # platform: linux/amd64
     volumes:
       - ./envs/.env.dev:/app/config/envs/.env.dev
     environment:

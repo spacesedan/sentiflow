@@ -11,7 +11,23 @@ import (
 	"github.com/spacesedan/sentiflow/internal/clients"
 	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
+	"github.com/spacesedan/sentiflow/internal/utils"
 )
+
+var resultsStreamBuffer = utils.NewBatchBuffer[models.SentimentAnalysisResult]()
+
+func StartSentimentStreamBatchFlusher(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Second * 5)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if resultsStreamBuffer.Size() > 0 {
+				processSentimentResults(ctx)
+			}
+		}
+	}()
+}
 
 func StartSentimentStreamConsumer(ctx context.Context) error {
 	client := clients.GetDynamoDBStreamClient()
@@ -84,7 +100,10 @@ func StartSentimentStreamConsumer(ctx context.Context) error {
 					slog.String("result_id", result.ContentID),
 					slog.String("topic", result.Topic))
 
-				go processSentimentResult(result)
+				resultsStreamBuffer.Add(result)
+				if resultsStreamBuffer.Size() >= utils.STREAM_BATCH_SIZE {
+					go processSentimentResults(ctx)
+				}
 
 			}
 			shardIterator = recordsOutput.NextShardIterator
@@ -94,4 +113,4 @@ func StartSentimentStreamConsumer(ctx context.Context) error {
 	return nil
 }
 
-func processSentimentResult(result models.SentimentAnalysisResult) {}
+func processSentimentResults(ctx context.Context) {}

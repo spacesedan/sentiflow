@@ -2,9 +2,13 @@ package clients
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +16,8 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+	"github.com/spacesedan/sentiflow/internal/models"
 )
 
 var (
@@ -109,4 +115,93 @@ func (t *sigV4Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return t.next.RoundTrip(signedReq)
+}
+
+func (o Opensearch) IsHealthy(ctx context.Context) bool {
+	req := opensearchapi.ClusterHealthReq{}
+	res, err := o.Client.Do(ctx, req, nil)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return false
+	}
+
+	return res.StatusCode == http.StatusOK
+}
+
+func (o Opensearch) IndexTopic(ctx context.Context, topic models.Topic) error {
+	slog.Info("[OpenSearchClient] Indexing new topic",
+		slog.String("topic", topic.Topic))
+
+	index := "topics"
+
+	payload, err := json.Marshal(topic)
+	if err != nil {
+		slog.Error("[OpenSearchClient] failed to marshal topic",
+			slog.String("topic", topic.Topic),
+			slog.String("error", err.Error()))
+		return err
+	}
+
+	req := opensearchapi.IndexReq{
+		Index:      index,
+		DocumentID: topic.URL,
+		Body:       strings.NewReader(string((payload))),
+	}
+
+	res, err := o.Client.Do(ctx, req, nil)
+	if err != nil {
+		slog.Error("[OpenSearchClient] Failed to index topic",
+			slog.String("error", err.Error()))
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		slog.Error("[OpenSearchClient] OpenSearch indexing error",
+			slog.String("status", res.Status()))
+		return fmt.Errorf("opensearch error: %s", res.Status())
+	}
+
+	return nil
+}
+
+func (o Opensearch) IndexSentimentResult(ctx context.Context, result models.SentimentAnalysisResult) error {
+	slog.Info("[OpenSearchClient] Indexing new sentiment result",
+		slog.String("content_id", result.ContentID))
+
+	index := "sentiment-results"
+
+	payload, err := json.Marshal(result)
+	if err != nil {
+		slog.Error("[OpenSearchClient] failed to marshal sentiment result",
+			slog.String("content_id", result.ContentID),
+			slog.String("error", err.Error()))
+		return err
+	}
+
+	req := opensearchapi.IndexReq{
+		Index:      index,
+		DocumentID: result.ContentID,
+		Body:       strings.NewReader(string((payload))),
+	}
+
+	res, err := o.Client.Do(ctx, req, nil)
+	if err != nil {
+		slog.Error("[OpenSearchClient] Failed to index sentiment result",
+			slog.String("error", err.Error()))
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		slog.Error("[OpenSearchClient] OpenSearch indexing error",
+			slog.String("status", res.Status()))
+		return fmt.Errorf("opensearch error: %s", res.Status())
+	}
+
+	return nil
 }
