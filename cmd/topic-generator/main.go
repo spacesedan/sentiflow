@@ -23,12 +23,12 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
 
-	headlines, err := clients.GetNewsAPIClient().GetTopHeadlinesByCategory()
+	articles, err := clients.GetNewsAPIClient().GetTopHeadlinesByCategory()
 	if err != nil {
 		slog.Warn("[TopicGenerator] Failed to get Top headlines from the NewsAPI",
 			slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	topicgeneration.GenerateTopicsFromHeadlines(ctx, headlines)
+	topicgeneration.GenerateTopicsFromHeadlines(ctx, articles)
 	slog.Info("[TopicGenerator] Topic generation completed successfully")
 }

@@ -38,13 +38,13 @@ func GetNewsAPIClient() *NewsAPIClient {
 	return newsAPIInstance
 }
 
-func (n NewsAPIClient) GetTopHeadlinesByCategory() ([]models.NewsAPIArticles, error) {
+func (n NewsAPIClient) GetTopHeadlinesByCategory() ([]models.NewsAPIArticle, error) {
 	if n.APIKey == "" {
 		slog.Error("[NewsAPIClient] API key is missing")
 		return nil, errors.New("[NewsAPIClient] API key is missing")
 	}
 
-	var responses []models.NewsAPIArticles
+	var responses []models.NewsAPIArticle
 	categories := []string{
 		"business", "entertainment", "general",
 		"health", "science", "sports", "technology",
@@ -161,13 +161,13 @@ func (n NewsAPIClient) fetchCategoryHeadlinesByCategory(category string) (*model
 	return nil, errors.New("[NewsAPIClient] Failed after max retries")
 }
 
-func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPIArticles, error) {
+func (n NewsAPIClient) GetTopHeadlines() ([]models.NewsAPIArticle, error) {
 	if n.APIKey == "" {
 		slog.Error("[NewsAPIClient] API key is missing")
 		return nil, errors.New("[NewsAPIClient] API key is missing")
 	}
 
-	var responses []models.NewsAPIArticles
+	var responses []models.NewsAPIArticle
 
 	slog.Info("[NewsAPIClient] Fetching headlines")
 
@@ -276,9 +276,9 @@ func (n NewsAPIClient) fetchCategoryHeadlines() (*models.NewsAPITopHeadlinesResp
 	return nil, errors.New("[NewsAPIClient] Failed after max retries")
 }
 
-func (n NewsAPIClient) GetTopHeadlinesFromFile() ([]models.NewsAPIArticles, error) {
+func (n NewsAPIClient) GetTopHeadlinesFromFile() ([]models.NewsAPIArticle, error) {
 	var response models.NewsAPITopHeadlinesResponse
-	var headlines []models.NewsAPIArticles
+	var headlines []models.NewsAPIArticle
 	filebytes, err := os.ReadFile("./data/newsapi.json")
 	if err != nil {
 		slog.Warn("[FetchAndStoreTopics] Failed to fetch latested headlines from NewsAPI, retrying...",

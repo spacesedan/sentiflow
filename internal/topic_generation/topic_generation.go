@@ -2,7 +2,10 @@ package topicgeneration
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -14,34 +17,47 @@ import (
 	"github.com/spacesedan/sentiflow/internal/utils"
 )
 
-var headlineBuffer = utils.NewBatchBuffer[models.NewsAPIArticles]()
+var headlineBuffer = utils.NewBatchBuffer[models.Headline]()
+
+// generateHeadlineID generates a unique ID for a headline using the source, headline, and url
+func generateHeadlineID(headline, source, url string) string {
+	raw := fmt.Sprintf("%s:%s:%s", headline, source, url)
+	hash := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(hash[:])
+}
 
 // GenerateTopicsFromHeadlines processes new headlines in batches, dedupes results, and merges them
-func GenerateTopicsFromHeadlines(ctx context.Context, headlines []models.NewsAPIArticles) {
-	slog.Info("[TopicGenerator] Starting topic generation")
+func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIArticle) {
+	slog.Info("[TopicGenerator] Starting headline generation")
 
 	var err error
-	var storedTopics []models.Topic
+	var storedHeadlines []models.Headline
 
-	storedTopics, err = db.GetAllTopics()
+	headlines := normalizeHeadlines(articles)
+
+	// Get the stored headlines in dynamoDB
+	storedHeadlines, err = db.GetAllHeadlines()
 	if err != nil {
+		// fallback to en empty array if no headlines are stored
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
-		storedTopics = []models.Topic{} // Fallback to empty
+		storedHeadlines = []models.Headline{} // Fallback to empty
 	}
 
 	for _, headline := range headlines {
 		select {
 		case <-ctx.Done():
 			slog.Warn("[TopicGenerator] context canceled, flushing remaining buffer")
-			if err := processHeadlineBatch(ctx, storedTopics); err != nil {
+			if err := processHeadlineBatch(ctx, storedHeadlines); err != nil {
 				slog.Error("[TopicGenerator] context canceled; flushing remaining buffer",
 					slog.String("error", err.Error()))
 			}
 			return
 		default:
+			// add headlines to the batch
 			headlineBuffer.Add(headline)
+			// once the batch gets to a certain size process the batch
 			if headlineBuffer.Size() >= 100 {
-				if err := processHeadlineBatch(ctx, storedTopics); err != nil {
+				if err := processHeadlineBatch(ctx, storedHeadlines); err != nil {
 					slog.Error("[TopicGenerator] Error flushing buffer",
 						slog.String("error", err.Error()))
 				}
@@ -49,15 +65,41 @@ func GenerateTopicsFromHeadlines(ctx context.Context, headlines []models.NewsAPI
 		}
 	}
 
+	// at the end of the loop process any remaining healines in the batch
 	if headlineBuffer.Size() > 0 {
-		if err := processHeadlineBatch(ctx, storedTopics); err != nil {
+		if err := processHeadlineBatch(ctx, storedHeadlines); err != nil {
 			slog.Error("[TopicGenerator] Error processing final batch",
 				slog.String("error", err.Error()))
 		}
 	}
 }
 
-func processHeadlineBatch(ctx context.Context, storedTopics []models.Topic) error {
+// normalizeHeadline - updates the shape of the NewsAPI article to work with stored headlines
+func normalizeHeadlines(articles []models.NewsAPIArticle) []models.Headline {
+	var headlines []models.Headline
+	source := "NewsAPI"
+
+	for _, article := range articles {
+		headline := models.Headline{
+			ID: generateHeadlineID(article.Title, source, article.URL),
+			HeadlineMeta: models.HeadlineMeta{
+				Source:      source,
+				Author:      article.Author,
+				Title:       article.Title,
+				Description: article.Description,
+				Url:         article.URL,
+				UrlToImage:  article.UrlToImage,
+				PublishedAt: article.PublishedAt,
+			},
+		}
+		headlines = append(headlines, headline)
+	}
+
+	return headlines
+}
+
+// processHeadlineBatch - makes the request to OpenAI to generate queryable headlines
+func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline) error {
 	batch := headlineBuffer.GetAndClear()
 	if len(batch) == 0 {
 		return nil
@@ -93,17 +135,17 @@ func processHeadlineBatch(ctx context.Context, storedTopics []models.Topic) erro
 
 	cleanedResponse := cleanOpenAIResponse(resp.Choices[0].Message.Content)
 
-	var generatedTopics *models.OpenAITopicResponse
-	if err := json.Unmarshal([]byte(cleanedResponse), &generatedTopics); err != nil {
+	var generatedHeadlines *models.OpenAITopicResponse
+	if err := json.Unmarshal([]byte(cleanedResponse), &generatedHeadlines); err != nil {
 		slog.Error("Failed to unmarshal generated topics",
 			slog.String("error", err.Error()))
 		return err
 	}
 
-	uniqueTopics := removeLocalDuplicates(generatedTopics.Topics)
-	filteredTopics := filterAgainstStored(uniqueTopics, storedTopics)
+	uniqueHeadlines := removeLocalDuplicates(generatedHeadlines.Headlines)
+	filteredHeadline := filterAgainstStored(uniqueHeadlines, storedHeadlines)
 
-	if err := db.StoreBatchedTopics(ctx, filteredTopics); err != nil {
+	if err := db.StoreBatchedHeadlines(ctx, filteredHeadline); err != nil {
 		slog.Error("Failed to store generated topics in db",
 			slog.String("error", err.Error()))
 		return err
@@ -112,14 +154,14 @@ func processHeadlineBatch(ctx context.Context, storedTopics []models.Topic) erro
 	return nil
 }
 
-func buildChatMessage(headlines []models.NewsAPIArticles) []openai.ChatCompletionMessage {
+func buildChatMessage(headlines []models.Headline) []openai.ChatCompletionMessage {
 	systemMessage := `
 You will receive several news headlines as JSON objects.
 Respond ONLY with a valid JSON object, without any additional commentary.
 Each topic must have:
 
-- "title": The original title as it was sent.
-- "topic": Concise, clear, and easily searchable (queryable).
+- "headline": The original "headline" as it was sent.
+- "queryable_headline": Concise, clear, and easily searchable (queryable).
 - "category": One of the following predefined categories:
   - Technology
   - Business & Finance
@@ -130,16 +172,16 @@ Each topic must have:
   - Lifestyle & Society
   - Memes & Internet Trends
   - Crime & Law
-- "url": Original URL from the headline.
+- "id": return the same ID that was sent in the message
 
 JSON response structure:
 {
-  "topics": [
+  "headines": [
     {
-      "title": "the original title",
-      "topic": "queryable version of the title",
+      "headline": "the original headline",
+      "queryable_headline": "queryable version of the headline",
       "category": "Predefined Category",
-      "url": "original URL"
+      "id": "return the exact value that was sent in the orginal request"
     },
     ...
   ]
@@ -154,10 +196,14 @@ JSON response structure:
 	}
 
 	for _, headline := range headlines {
-		bytes, err := json.Marshal(headline)
+		req := models.OpenAIRequest{
+			Headline: headline.HeadlineMeta.Title,
+			ID:       headline.ID,
+		}
+		bytes, err := json.Marshal(req)
 		if err != nil {
 			slog.Warn("Failed to marshal headline",
-				slog.String("headline", headline.Title),
+				slog.String("headline", headline.HeadlineMeta.Title),
 				slog.String("error", err.Error()))
 			continue
 		}
@@ -199,14 +245,14 @@ func cleanOpenAIResponse(response string) string {
 
 // removeLocalDuplicates ensures the newly generated batch from OpenAI
 // doesn't contain duplicates among itself (by URL).
-func removeLocalDuplicates(topics []models.Topic) []models.Topic {
+func removeLocalDuplicates(headlines []models.Headline) []models.Headline {
 	slog.Info("[TopicGenerator] Removing duplicate generated topics",
-		slog.Int("starting", len(topics)))
+		slog.Int("starting", len(headlines)))
 	seen := make(map[string]struct{})
-	var unique []models.Topic
-	for _, t := range topics {
-		if _, exists := seen[t.URL]; !exists && t.URL != "" {
-			seen[t.URL] = struct{}{}
+	var unique []models.Headline
+	for _, t := range headlines {
+		if _, exists := seen[t.ID]; !exists && t.ID != "" {
+			seen[t.ID] = struct{}{}
 			unique = append(unique, t)
 		}
 	}
@@ -216,16 +262,16 @@ func removeLocalDuplicates(topics []models.Topic) []models.Topic {
 }
 
 // filterAgainstStored removes any topics whose URL is already in storedTopics
-func filterAgainstStored(newTopics []models.Topic, storedTopics []models.Topic) []models.Topic {
-	slog.Info("[TopicGenerator] Removing topics that have been previously stored", slog.Int("starting", len(newTopics)))
-	storedSet := make(map[string]struct{}, len(storedTopics))
-	for _, st := range storedTopics {
-		storedSet[st.URL] = struct{}{}
+func filterAgainstStored(newHeadlines []models.Headline, storedHeadlines []models.Headline) []models.Headline {
+	slog.Info("[TopicGenerator] Removing topics that have been previously stored", slog.Int("starting", len(newHeadlines)))
+	storedSet := make(map[string]struct{}, len(storedHeadlines))
+	for _, st := range storedHeadlines {
+		storedSet[st.ID] = struct{}{}
 	}
 
-	var final []models.Topic
-	for _, t := range newTopics {
-		if _, exists := storedSet[t.URL]; !exists {
+	var final []models.Headline
+	for _, t := range newHeadlines {
+		if _, exists := storedSet[t.ID]; !exists {
 			final = append(final, t)
 		}
 	}

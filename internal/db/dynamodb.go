@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	TOPICS_TABLE_NAME             = "Topics"
+	HEADLINES_TABLE_NAME          = "Headlines"
 	SENTIMENT_ANALYSIS_TABLE_NAME = "SentimentResults"
 )
 
@@ -25,16 +25,14 @@ func InitDynamoDB() {
 	dbClient = clients.GetDynamoDBClient()
 }
 
-func StoreBatchedTopics(ctx context.Context, topics []models.Topic) error {
+// StoreBatchedHeadlines store batches of incoming headlines, dynamo can only do 25 at a time
+func StoreBatchedHeadlines(ctx context.Context, headlines []models.Headline) error {
 	if dbClient == nil {
 		dbClient = clients.GetDynamoDBClient()
 	}
 
-	// TTL for topics
-	expirationTime := time.Now().Add(24 * time.Hour).Unix()
-
 	const maxBatchSize = 25
-	for i := 0; i < len(topics); i += maxBatchSize {
+	for i := 0; i < len(headlines); i += maxBatchSize {
 		select {
 		case <-ctx.Done():
 			slog.Warn("[DynamoDB] context canceled")
@@ -42,28 +40,23 @@ func StoreBatchedTopics(ctx context.Context, topics []models.Topic) error {
 		default:
 
 			end := i + maxBatchSize
-			if end > len(topics) {
-				end = len(topics)
+			if end > len(headlines) {
+				end = len(headlines)
 			}
 
 			writeRequests := make([]types.WriteRequest, 0, maxBatchSize)
-			for _, topic := range topics[i:end] {
+
+			for _, headline := range headlines[i:end] {
 				writeRequests = append(writeRequests, types.WriteRequest{
 					PutRequest: &types.PutRequest{
-						Item: map[string]types.AttributeValue{
-							"url":        &types.AttributeValueMemberS{Value: topic.URL},
-							"category":   &types.AttributeValueMemberS{Value: topic.Category},
-							"topic":      &types.AttributeValueMemberS{Value: topic.Topic},
-							"title":      &types.AttributeValueMemberS{Value: topic.Title},
-							"expires_at": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expirationTime)},
-						},
+						Item: headlineToDynamonDBItem(headline),
 					},
 				})
 			}
 
 			out, err := dbClient.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
 				RequestItems: map[string][]types.WriteRequest{
-					TOPICS_TABLE_NAME: writeRequests,
+					HEADLINES_TABLE_NAME: writeRequests,
 				},
 			})
 			if err != nil {
@@ -78,7 +71,7 @@ func StoreBatchedTopics(ctx context.Context, topics []models.Topic) error {
 				backoffDuration *= 2
 				slog.Warn("[DynamoDB] Retrying unprocessed items...",
 					slog.Int("retry_attempt", retryCount+1),
-					slog.Int("remaining_items", len(out.UnprocessedItems[TOPICS_TABLE_NAME])),
+					slog.Int("remaining_items", len(out.UnprocessedItems[HEADLINES_TABLE_NAME])),
 				)
 
 				out, err = dbClient.BatchWriteItem(context.TODO(), &dynamodb.BatchWriteItemInput{
@@ -94,7 +87,7 @@ func StoreBatchedTopics(ctx context.Context, topics []models.Topic) error {
 
 			if len(out.UnprocessedItems) > 0 {
 				slog.Error("[DynamoDB] Some items were not written even after retries",
-					slog.Int("remaining_items", len(out.UnprocessedItems[TOPICS_TABLE_NAME])))
+					slog.Int("remaining_items", len(out.UnprocessedItems[HEADLINES_TABLE_NAME])))
 			}
 		}
 	}
@@ -102,14 +95,46 @@ func StoreBatchedTopics(ctx context.Context, topics []models.Topic) error {
 	return nil
 }
 
-func GetAllTopics() ([]models.Topic, error) {
+// headlineToDynamonDBItem - helper function that converts a headline object into a dynamodb object that can be stored
+func headlineToDynamonDBItem(headline models.Headline) map[string]types.AttributeValue {
+	// TTL for headlines
+	expirationTime := time.Now().Add(24 * time.Hour).Unix()
+
+	item := make(map[string]types.AttributeValue)
+
+	item["id"] = &types.AttributeValueMemberS{Value: headline.ID}
+	item["query"] = &types.AttributeValueMemberS{Value: headline.Query}
+	item["category"] = &types.AttributeValueMemberS{Value: headline.Category}
+	item["expires_at"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expirationTime)}
+
+	// TODO: hopefully this doesn't cause any bugs, see if it is possible to come up a different way to do this
+	if headline.SentimentScore != 0 {
+		item["sentiment_score"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", headline.SentimentScore)}
+	}
+
+	metadata := make(map[string]types.AttributeValue)
+
+	metadata["source"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Source}
+	metadata["author"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Author}
+	metadata["title"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Title}
+	metadata["description"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Description}
+	metadata["publishedAt"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.PublishedAt}
+	metadata["url"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Url}
+	metadata["urlToImage"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.UrlToImage}
+
+	item["metadata"] = &types.AttributeValueMemberM{Value: metadata}
+
+	return item
+}
+
+func GetAllHeadlines() ([]models.Headline, error) {
 	if dbClient == nil {
 		dbClient = clients.GetDynamoDBClient()
 	}
 
-	var topics []models.Topic
+	var headlines []models.Headline
 	input := &dynamodb.ScanInput{
-		TableName: aws.String(TOPICS_TABLE_NAME),
+		TableName: aws.String(HEADLINES_TABLE_NAME),
 	}
 
 	paginator := dynamodb.NewScanPaginator(dbClient, input)
@@ -117,19 +142,19 @@ func GetAllTopics() ([]models.Topic, error) {
 	for paginator.HasMorePages() {
 		out, err := paginator.NextPage(context.TODO())
 		if err != nil {
-			return nil, fmt.Errorf("[DynamoDB] Scan for topics failed: %w", err)
+			return nil, fmt.Errorf("[DynamoDB] Scan for headlines failed: %w", err)
 		}
-		var topicPage []models.Topic
-		err = attributevalue.UnmarshalListOfMaps(out.Items, &topicPage)
+		var headlinePage []models.Headline
+		err = attributevalue.UnmarshalListOfMaps(out.Items, &headlinePage)
 		if err != nil {
 			slog.Error("[DynamoDB] Unable to marshal current topic page", slog.String("error", err.Error()))
 			return nil, err
 		}
-		topics = append(topics, topicPage...)
+		headlines = append(headlines, headlinePage...)
 
 	}
-	slog.Info("[DynamoDB] Successfully retrieved topics", slog.Int("count", len(topics)))
-	return topics, nil
+	slog.Info("[DynamoDB] Successfully retrieved headlines", slog.Int("count", len(headlines)))
+	return headlines, nil
 }
 
 func BatchInsertSentimentResults(ctx context.Context, results []models.SentimentAnalysisResult) error {
