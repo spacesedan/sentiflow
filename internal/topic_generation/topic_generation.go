@@ -22,6 +22,7 @@ const (
 	headlineProcessingBatchSize = 20 // Reduced batch size
 	openAIRetryAttempts         = 5
 	newsAPISourceName           = "NewsAPI"
+	openAICallAttemptTimeout    = 60 * time.Second // Timeout for each individual OpenAI API call attempt
 )
 
 var headlineBuffer = utils.NewBatchBuffer[models.Headline]()
@@ -119,22 +120,48 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 	messages := buildChatMessage(batch)
 
 	for i := 0; i < openAIRetryAttempts; i++ {
+		// 1. Check for cancellation of the overall batch context before making an attempt.
+		select {
+		case <-ctx.Done():
+			slog.Warn("[TopicGenerator] Overall batch context cancelled; stopping OpenAI retries.", slog.String("error", ctx.Err().Error()))
+			// If completionErr is still nil, it means we were cancelled before any successful attempt or OpenAI error.
+			if completionErr == nil {
+				completionErr = ctx.Err()
+			}
+			return completionErr // Return the main context's error.
+		default:
+			// Continue with the current attempt.
+		}
+
+		// 2. Create a new context with a timeout for the current API call attempt.
+		// This context is derived from the main batch context `ctx`.
+		// If `ctx` is cancelled, `attemptCtx` will also be cancelled.
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, openAICallAttemptTimeout)
+
 		start := time.Now()
-		resp, completionErr = clients.GetOpenAIClient().Client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		resp, completionErr = clients.GetOpenAIClient().Client.CreateChatCompletion(attemptCtx, openai.ChatCompletionRequest{
 			Model:    openAIModel,
 			Messages: messages,
 			ResponseFormat: &openai.ChatCompletionResponseFormat{
 				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
 			},
 		})
+		
+		attemptCancel() // Release resources associated with attemptCtx immediately.
+
 		if completionErr == nil {
-			break
+			break // Success, exit the retry loop.
 		}
+
 		slog.Warn("Failed to get a response from OpenAI, retrying...",
 			slog.String("error", completionErr.Error()),
 			slog.Int("attempt", i+1),
 			slog.Duration("elapsed", time.Since(start)))
+		
+		// If the loop continues, it means completionErr is not nil.
+		// The next iteration will again check ctx.Done() and create a new attemptCtx.
 	}
+
 	if completionErr != nil {
 		slog.Warn("failed to get a response from OpenAI",
 			slog.Int("attempts", openAIRetryAttempts),
