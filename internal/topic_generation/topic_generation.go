@@ -211,7 +211,10 @@ Respond only with a valid JSON object. Do not include any additional text or com
 For each headline object, include the following fields:
 
 - headline: The original headline as it was provided.
-    - **CRITICAL**: Ensure that any special characters within this 'headline' string value, such as double quotes (e.g., ") or backslashes (e.g., \), are properly escaped to produce valid JSON. For example, a headline like `He said "Wow!"` should be represented as `"headline": "He said \"Wow!\""` in the JSON.
+    - **CRITICAL**: The string value for the 'headline' field must be a valid JSON string value.
+    - All forms of double quotation marks from the original headline (e.g., standard `"` (U+0022), left curly `“` (U+201C), right curly `”` (U+201D)) MUST be converted to standard double quotes (`"`, U+0022) in the output string value.
+    - These standard double quotes (`"`), and any backslashes (`\`), that appear as part of the headline's text MUST then be properly escaped (e.g., `\"` for a quote, `\\` for a backslash).
+    - For example, if an input headline is `Her "official" title is “Top Coder”.`, it should be represented in the JSON as `"headline": "Her \"official\" title is \"Top Coder\"."`.
 
 - query: A concise, clear, and searchable version of the headline.
     - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
