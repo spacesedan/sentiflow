@@ -396,10 +396,20 @@ func matchLocalHeadlines(uniqueHeadlines []models.OpenAIHeadline, headlines []mo
 				continue
 			}
 
+			avgSentiment, err := db.GetAverageSentimentForHeadline(h.ID)
+			if err != nil {
+				// Log the error but continue, defaulting sentiment to 0.0
+				slog.Warn("[TopicGenerator] Failed to get average sentiment for headline, defaulting to 0.0",
+					slog.String("headline_id", h.ID),
+					slog.String("error", err.Error()))
+				// avgSentiment will be 0.0 from its declaration if GetAverageSentimentForHeadline returns an error
+			}
+
 			headline := models.Headline{
-				ID:       h.ID,
-				Query:    uniqueOpenAIResp.Query,
-				Category: uniqueOpenAIResp.Category,
+				ID:             h.ID,
+				Query:          uniqueOpenAIResp.Query,
+				Category:       uniqueOpenAIResp.Category,
+				SentimentScore: avgSentiment, // Populate the sentiment score
 				HeadlineMeta: models.HeadlineMeta{
 					Source:      h.HeadlineMeta.Source,
 					Title:       h.HeadlineMeta.Title,
