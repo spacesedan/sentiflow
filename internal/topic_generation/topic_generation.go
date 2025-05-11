@@ -18,10 +18,10 @@ import (
 )
 
 const (
-	openAIModel           = openai.GPT3Dot5Turbo1106
+	openAIModel                 = openai.GPT3Dot5Turbo1106
 	headlineProcessingBatchSize = 100
-	openAIRetryAttempts   = 5
-	newsAPISourceName     = "NewsAPI"
+	openAIRetryAttempts         = 5
+	newsAPISourceName           = "NewsAPI"
 )
 
 var headlineBuffer = utils.NewBatchBuffer[models.Headline]()
@@ -140,7 +140,7 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 			slog.Int("attempts", openAIRetryAttempts),
 			slog.String("error", completionErr.Error()))
 		// Even if there's an error, if resp is not nil, we might have a partial response or finish reason
-		if resp.Choices != nil && len(resp.Choices) > 0 {
+		if len(resp.Choices) > 0 {
 			slog.Info("[TopicGenerator] OpenAI Response Finish Reason on error", slog.String("finish_reason", string(resp.Choices[0].FinishReason)))
 		}
 		return completionErr
@@ -443,4 +443,3 @@ func filterAgainstStored(newHeadlines []models.Headline, storedHeadlines []model
 		slog.Int("ending", len(final)))
 	return final
 }
-
