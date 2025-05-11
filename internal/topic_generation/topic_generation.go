@@ -184,7 +184,9 @@ For each headline object, include the following fields:
 - headline: The original headline as it was provided.
 
 - query: A concise, clear, and searchable version of the headline.
-    - **IMPORTANT** This field must not be empty or null. If no relevant query can be formed, return a simplified version of the headline instead.
+    - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
+    - If a specific, searchable query cannot be reasonably formed from the headline, YOU MUST use the original headline text itself as the value for the 'query' field.
+    - DO NOT under any circumstances return an empty string (e.g., "") or a null value for the 'query' field.
 
 - category: One of the following categories:
 
