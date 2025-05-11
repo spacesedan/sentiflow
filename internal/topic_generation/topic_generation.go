@@ -19,7 +19,7 @@ import (
 
 const (
 	openAIModel                 = openai.GPT3Dot5Turbo1106
-	headlineProcessingBatchSize = 100
+	headlineProcessingBatchSize = 20 // Reduced batch size
 	openAIRetryAttempts         = 5
 	newsAPISourceName           = "NewsAPI"
 )
