@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	openAIModel                 = openai.GPT3Dot5Turbo1106
-	headlineProcessingBatchSize = 20 // Reduced batch size
-	openAIRetryAttempts         = 5
-	newsAPISourceName           = "NewsAPI"
-	openAICallAttemptTimeout    = 60 * time.Second // Timeout for each individual OpenAI API call attempt
+	openAIModel                  = openai.GPT3Dot5Turbo1106
+	headlineProcessingBatchSize  = 20 // Reduced batch size
+	openAIRetryAttempts          = 5
+	newsAPISourceName            = "NewsAPI"
+	openAICallAttemptTimeout     = 60 * time.Second // Timeout for each individual OpenAI API call attempt
+	shutdownFlushTimeoutDuration = 55 * time.Second // Timeout for the final flush on context cancellation (should be < openAICallAttemptTimeout)
 )
 
 var headlineBuffer = utils.NewBatchBuffer[models.Headline]()
@@ -54,12 +55,18 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 	for _, headline := range headlines {
 		select {
 		case <-ctx.Done():
-			slog.Warn("[TopicGenerator] context canceled, flushing remaining buffer")
-			if err := processHeadlineBatch(ctx, storedHeadlines); err != nil {
-				slog.Error("[TopicGenerator] context canceled; flushing remaining buffer",
+			slog.Warn("[TopicGenerator] Main context canceled. Attempting to flush remaining headlines from buffer.", slog.String("reason", ctx.Err().Error()))
+			// Create a new context for the shutdown flush.
+			// This uses context.Background() as its parent, so it's not affected by ctx.Done().
+			// The timeout should be sufficient for at least one OpenAI attempt.
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownFlushTimeoutDuration)
+			defer shutdownCancel()
+
+			if err := processHeadlineBatch(shutdownCtx, storedHeadlines); err != nil {
+				slog.Error("[TopicGenerator] Error during shutdown flush of headline buffer.",
 					slog.String("error", err.Error()))
 			}
-			return
+			return // Exit GenerateTopicsFromHeadlines
 		default:
 			// add headlines to the batch
 			headlineBuffer.Add(headline)
