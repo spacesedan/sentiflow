@@ -133,9 +133,14 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 	if completionErr != nil {
 		slog.Warn("failed to get a response from OpenAI after 5 tries",
 			slog.String("error", completionErr.Error()))
+		// Even if there's an error, if resp is not nil, we might have a partial response or finish reason
+		if resp.Choices != nil && len(resp.Choices) > 0 {
+			slog.Info("[TopicGenerator] OpenAI Response Finish Reason on error", slog.String("finish_reason", string(resp.Choices[0].FinishReason)))
+		}
 		return completionErr
 	}
 
+	slog.Info("[TopicGenerator] OpenAI Response Finish Reason", slog.String("finish_reason", string(resp.Choices[0].FinishReason)))
 	cleanedResponse := cleanOpenAIResponse(resp.Choices[0].Message.Content)
 
 	var generatedHeadlines *models.OpenAIHeadlineResponse
@@ -206,9 +211,12 @@ Respond only with a valid JSON object. Do not include any additional text or com
 For each headline object, include the following fields:
 
 - headline: The original headline as it was provided.
+    - **CRITICAL**: Ensure that any special characters within this 'headline' string value, such as double quotes (e.g., ") or backslashes (e.g., \), are properly escaped to produce valid JSON. For example, a headline like `He said "Wow!"` should be represented as `"headline": "He said \"Wow!\""` in the JSON.
 
 - query: A concise, clear, and searchable version of the headline.
-    - **IMPORTANT** This field must not be empty or null. If no relevant query can be formed, return a simplified version of the headline instead.
+    - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
+    - If a specific, searchable query cannot be reasonably formed from the headline, YOU MUST use the original headline text itself as the value for the 'query' field.
+    - DO NOT under any circumstances return an empty string (e.g., "") or a null value for the 'query' field.
 
 - category: One of the following categories:
 
