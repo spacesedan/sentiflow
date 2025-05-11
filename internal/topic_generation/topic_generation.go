@@ -42,9 +42,6 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
 		storedHeadlines = []models.Headline{} // Fallback to empty
 	}
-	// storedBytes, _ := json.Marshal(storedHeadlines)
-	// os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
-	// os.Exit(1) // This was causing premature exit.
 
 	for _, headline := range headlines {
 		select {
@@ -134,7 +131,7 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 		slog.Warn("failed to get a response from OpenAI after 5 tries",
 			slog.String("error", completionErr.Error()))
 		// Even if there's an error, if resp is not nil, we might have a partial response or finish reason
-		if resp.Choices != nil && len(resp.Choices) > 0 {
+		if len(resp.Choices) > 0 {
 			slog.Info("[TopicGenerator] OpenAI Response Finish Reason on error", slog.String("finish_reason", string(resp.Choices[0].FinishReason)))
 		}
 		return completionErr
@@ -214,7 +211,7 @@ For each headline object, include the following fields:
     - **CRITICAL**: The string value for the 'headline' field must be a valid JSON string value.
     - All forms of double quotation marks from the original headline (e.g., standard '"' (U+0022), left curly '“' (U+201C), right curly '”' (U+201D)) MUST be converted to standard double quotes ('"', U+0022) in the output string value.
     - These standard double quotes ('"'), and any backslashes ('\'), that appear as part of the headline's text MUST then be properly escaped (e.g., '\"' for a quote, '\\' for a backslash).
-    - For example, if an input headline is 'Her "official" title is “Top Coder”.', it should be represented in the JSON as `"headline": "Her \"official\" title is \"Top Coder\"."`.
+    - For example, if an input headline is 'Her "official" title is “Top Coder”.', it should be represented in the JSON as '"headline": "Her \"official\" title is \"Top Coder\"."'
 
 - query: A concise, clear, and searchable version of the headline.
     - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
