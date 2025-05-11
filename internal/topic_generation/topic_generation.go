@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -42,9 +43,9 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
 		storedHeadlines = []models.Headline{} // Fallback to empty
 	}
-	// storedBytes, _ := json.Marshal(storedHeadlines)
-	// os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
-	// os.Exit(1)
+	storedBytes, _ := json.Marshal(storedHeadlines)
+	os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
+	os.Exit(1)
 
 	for _, headline := range headlines {
 		select {
