@@ -17,6 +17,13 @@ import (
 	"github.com/spacesedan/sentiflow/internal/utils"
 )
 
+const (
+	openAIModel           = openai.GPT3Dot5Turbo1106
+	headlineProcessingBatchSize = 100
+	openAIRetryAttempts   = 5
+	newsAPISourceName     = "NewsAPI"
+)
+
 var headlineBuffer = utils.NewBatchBuffer[models.Headline]()
 
 // generateHeadlineID generates a unique ID for a headline using the source, headline, and url
@@ -56,7 +63,7 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 			// add headlines to the batch
 			headlineBuffer.Add(headline)
 			// once the batch gets to a certain size process the batch
-			if headlineBuffer.Size() >= 100 {
+			if headlineBuffer.Size() >= headlineProcessingBatchSize {
 				if err := processHeadlineBatch(ctx, storedHeadlines); err != nil {
 					slog.Error("[TopicGenerator] Error flushing buffer",
 						slog.String("error", err.Error()))
@@ -77,13 +84,12 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 // normalizeHeadline - updates the shape of the NewsAPI article to work with stored headlines
 func normalizeHeadlines(articles []models.NewsAPIArticle) []models.Headline {
 	var headlines []models.Headline
-	source := "NewsAPI"
 
 	for _, article := range articles {
 		headline := models.Headline{
-			ID: generateHeadlineID(article.Title, source, article.URL),
+			ID: generateHeadlineID(article.Title, newsAPISourceName, article.URL),
 			HeadlineMeta: models.HeadlineMeta{
-				Source:      source,
+				Source:      newsAPISourceName,
 				Author:      article.Author,
 				Title:       article.Title,
 				Description: article.Description,
@@ -102,18 +108,20 @@ func normalizeHeadlines(articles []models.NewsAPIArticle) []models.Headline {
 func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline) error {
 	batch := headlineBuffer.GetAndClear()
 	if len(batch) == 0 {
+		slog.Debug("[TopicGenerator] processHeadlineBatch called with empty buffer, skipping.")
 		return nil
 	}
+	slog.Info("[TopicGenerator] Processing headline batch", slog.Int("batch_size", len(batch)))
 
 	var completionErr error
 	var resp openai.ChatCompletionResponse
 
 	messages := buildChatMessage(batch)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < openAIRetryAttempts; i++ {
 		start := time.Now()
 		resp, completionErr = clients.GetOpenAIClient().Client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo1106,
+			Model:    openAIModel,
 			Messages: messages,
 			ResponseFormat: &openai.ChatCompletionResponseFormat{
 				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
@@ -128,10 +136,11 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 			slog.Duration("elapsed", time.Since(start)))
 	}
 	if completionErr != nil {
-		slog.Warn("failed to get a response from OpenAI after 5 tries",
+		slog.Warn("failed to get a response from OpenAI",
+			slog.Int("attempts", openAIRetryAttempts),
 			slog.String("error", completionErr.Error()))
 		// Even if there's an error, if resp is not nil, we might have a partial response or finish reason
-		if len(resp.Choices) > 0 {
+		if resp.Choices != nil && len(resp.Choices) > 0 {
 			slog.Info("[TopicGenerator] OpenAI Response Finish Reason on error", slog.String("finish_reason", string(resp.Choices[0].FinishReason)))
 		}
 		return completionErr
@@ -435,11 +444,3 @@ func filterAgainstStored(newHeadlines []models.Headline, storedHeadlines []model
 	return final
 }
 
-// min returns the smaller of x or y.
-// Used for safely creating log snippets.
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
