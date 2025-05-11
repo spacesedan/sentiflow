@@ -20,7 +20,7 @@ func main() {
 	config.LoadEnv(env)
 	logging.InitLogger()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
 
 	articles, err := clients.GetNewsAPIClient().GetTopHeadlinesByCategory()
