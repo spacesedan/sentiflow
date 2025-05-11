@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/spacesedan/sentiflow/config"
 	"github.com/spacesedan/sentiflow/internal/clients"
 	"github.com/spacesedan/sentiflow/internal/logging"
@@ -19,12 +18,6 @@ const (
 )
 
 func main() {
-	// Load .env file first for local development.
-	// This allows OPENAI_API_KEY, APP_TIMEOUT_MINUTES etc. to be set in a .env file.
-	if err := godotenv.Load(); err != nil {
-		slog.Info("No .env file found at project root, relying on system environment variables or config specific .env files")
-	}
-
 	appEnv := os.Getenv("APP_ENV")
 	if appEnv == "" {
 		appEnv = "dev"
