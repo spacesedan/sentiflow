@@ -43,9 +43,9 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
 		storedHeadlines = []models.Headline{} // Fallback to empty
 	}
-	storedBytes, _ := json.Marshal(storedHeadlines)
-	os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
-	os.Exit(1)
+	// storedBytes, _ := json.Marshal(storedHeadlines)
+	// os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
+	// os.Exit(1) // This was causing premature exit.
 
 	for _, headline := range headlines {
 		select {
@@ -142,7 +142,9 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 	var generatedHeadlines *models.OpenAIHeadlineResponse
 	if err := json.Unmarshal([]byte(cleanedResponse), &generatedHeadlines); err != nil {
 		slog.Error("Failed to unmarshal generated headlines",
-			slog.String("error", err.Error()))
+			slog.String("error", err.Error()),
+			slog.String("raw_openai_response", resp.Choices[0].Message.Content),
+			slog.String("cleaned_response_for_unmarshal", cleanedResponse))
 		return err
 	}
 
@@ -175,19 +177,13 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 	// Proceed with only the valid OpenAI responses.
 	// return the unique headlines from the valid generated ones
 	uniqueHeadlines := removeLocalDuplicates(validOpenAIResponses) // uniqueHeadlines is []models.OpenAIHeadline
-	// uniqueBytes, _ := json.Marshal(uniqueHeadlines)
-	// os.WriteFile("./test_data/uniqueHeadlines.json", uniqueBytes, 0644)
 
 	// match the unique generated headlines to the original using the IDs
 	// batch is the original []models.Headline
 	matchedHeadlines := matchLocalHeadlines(uniqueHeadlines, batch) // matchedHeadlines is []models.Headline
-	// matchedBytes, _ := json.Marshal(matchedHeadlines)
-	// os.WriteFile("./test_data/matchedHeadlines.json", matchedBytes, 0644)
 
 	// filter the generated headlines from the stored and keep only new headlines
 	filteredHeadline := filterAgainstStored(matchedHeadlines, storedHeadlines)
-	// filteredBytes, _ := json.Marshal(filteredHeadline)
-	// os.WriteFile("./test_data/filteredHeadlines.json", filteredBytes, 0644)
 
 	if err := db.StoreBatchedHeadlines(ctx, filteredHeadline); err != nil {
 		slog.Error("Failed to store generated headlines in db",
