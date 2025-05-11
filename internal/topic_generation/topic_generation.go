@@ -45,7 +45,7 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 	// storedBytes, _ := json.Marshal(storedHeadlines)
 	// os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
 	// os.Exit(1)
-
+	//
 	for _, headline := range headlines {
 		select {
 		case <-ctx.Done():
