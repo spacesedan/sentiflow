@@ -145,13 +145,41 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 		return err
 	}
 
-	// return the unique headlines from the generated ones
-	uniqueHeadlines := removeLocalDuplicates(generatedHeadlines.Headlines)
+	// Process OpenAI responses: separate valid ones from those to be re-queued.
+	var validOpenAIResponses []models.OpenAIHeadline
+	// Create a map of the original batch items for quick lookup when re-queueing.
+	originalBatchMap := make(map[string]models.Headline, len(batch))
+	for _, bh := range batch {
+		originalBatchMap[bh.ID] = bh
+	}
+
+	for _, ogh := range generatedHeadlines.Headlines { // ogh is models.OpenAIHeadline
+		if ogh.Query == "" || ogh.Category == "" {
+			slog.Warn("[TopicGenerator] OpenAI response missing query or category, re-queueing",
+				slog.String("ID", ogh.ID),
+				slog.String("query", ogh.Query),
+				slog.String("category", ogh.Category))
+			// Find the original headline from the input batch to re-queue it.
+			if originalHeadline, ok := originalBatchMap[ogh.ID]; ok {
+				headlineBuffer.Add(originalHeadline) // Add original models.Headline back to buffer
+			} else {
+				// This should ideally not happen if IDs are consistent.
+				slog.Warn("[TopicGenerator] Could not find original headline in current batch to re-queue", slog.String("ID", ogh.ID))
+			}
+		} else {
+			validOpenAIResponses = append(validOpenAIResponses, ogh)
+		}
+	}
+
+	// Proceed with only the valid OpenAI responses.
+	// return the unique headlines from the valid generated ones
+	uniqueHeadlines := removeLocalDuplicates(validOpenAIResponses) // uniqueHeadlines is []models.OpenAIHeadline
 	// uniqueBytes, _ := json.Marshal(uniqueHeadlines)
 	// os.WriteFile("./test_data/uniqueHeadlines.json", uniqueBytes, 0644)
 
 	// match the unique generated headlines to the original using the IDs
-	matchedHeadlines := matchLocalHeadlines(uniqueHeadlines, batch)
+	// batch is the original []models.Headline
+	matchedHeadlines := matchLocalHeadlines(uniqueHeadlines, batch) // matchedHeadlines is []models.Headline
 	// matchedBytes, _ := json.Marshal(matchedHeadlines)
 	// os.WriteFile("./test_data/matchedHeadlines.json", matchedBytes, 0644)
 
@@ -310,14 +338,33 @@ func matchLocalHeadlines(uniqueHeadlines []models.OpenAIHeadline, headlines []mo
 	}
 
 	// add the generate query and category while ignoring any duplicates
-	for _, h := range headlines {
+	for _, h := range headlines { // h is an original models.Headline from the input batch
 		if _, exists := seen[h.ID]; !exists && h.ID != "" {
-			unique := uniqueMap[h.ID]
-			fmt.Printf("%+v\n", unique)
+			uniqueOpenAIResp, foundInUniqueMap := uniqueMap[h.ID] // uniqueOpenAIResp is models.OpenAIHeadline
+
+			// If not foundInUniqueMap, it means its corresponding OpenAI response was either:
+			// 1. Invalid (missing query/category) and thus re-queued (so not in uniqueOpenAIHeadlines).
+			// 2. A duplicate OpenAI response removed by removeLocalDuplicates.
+			// In such cases, we skip creating a matched headline for storage in this cycle.
+			// Also, as a safeguard, check if Query or Category is empty even if found.
+			if !foundInUniqueMap || uniqueOpenAIResp.Query == "" || uniqueOpenAIResp.Category == "" {
+				if !foundInUniqueMap {
+					slog.Debug("[TopicGenerator] Original headline ID not found in unique OpenAI responses; likely re-queued or was a duplicate OpenAI response.", slog.String("ID", h.ID))
+				} else {
+					// This state (found in map but query/category empty) should ideally not be reached
+					// if validOpenAIResponses is correctly filtered before removeLocalDuplicates.
+					slog.Warn("[TopicGenerator] Matched OpenAI response has empty query/category despite pre-filtering, skipping.",
+						slog.String("ID", h.ID),
+						slog.String("query", uniqueOpenAIResp.Query),
+						slog.String("category", uniqueOpenAIResp.Category))
+				}
+				continue
+			}
+
 			headline := models.Headline{
 				ID:       h.ID,
-				Query:    unique.Query,
-				Category: unique.Category,
+				Query:    uniqueOpenAIResp.Query,
+				Category: uniqueOpenAIResp.Category,
 				HeadlineMeta: models.HeadlineMeta{
 					Source:      h.HeadlineMeta.Source,
 					Title:       h.HeadlineMeta.Title,
