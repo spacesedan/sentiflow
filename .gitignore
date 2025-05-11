@@ -69,3 +69,4 @@ aws_access_keys.txt
 .idea/
 .DS_Store
 Thumbs.db
+.aider*

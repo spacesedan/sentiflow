@@ -42,6 +42,9 @@ func GenerateTopicsFromHeadlines(ctx context.Context, articles []models.NewsAPIA
 		slog.Error("[TopicGenerator] Failed to fetch stored topics", slog.String("error", err.Error()))
 		storedHeadlines = []models.Headline{} // Fallback to empty
 	}
+	// storedBytes, _ := json.Marshal(storedHeadlines)
+	// os.WriteFile("./test_data/storedHeadlines.json", storedBytes, 0644)
+	// os.Exit(1)
 
 	for _, headline := range headlines {
 		select {
@@ -110,7 +113,7 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 
 	messages := buildChatMessage(batch)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		start := time.Now()
 		resp, completionErr = clients.GetOpenAIClient().Client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo1106,
@@ -128,25 +131,37 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 			slog.Duration("elapsed", time.Since(start)))
 	}
 	if completionErr != nil {
-		slog.Warn("failed to get a response from OpenAI after 3 tries",
+		slog.Warn("failed to get a response from OpenAI after 5 tries",
 			slog.String("error", completionErr.Error()))
 		return completionErr
 	}
 
 	cleanedResponse := cleanOpenAIResponse(resp.Choices[0].Message.Content)
 
-	var generatedHeadlines *models.OpenAITopicResponse
+	var generatedHeadlines *models.OpenAIHeadlineResponse
 	if err := json.Unmarshal([]byte(cleanedResponse), &generatedHeadlines); err != nil {
-		slog.Error("Failed to unmarshal generated topics",
+		slog.Error("Failed to unmarshal generated headlines",
 			slog.String("error", err.Error()))
 		return err
 	}
 
+	// return the unique headlines from the generated ones
 	uniqueHeadlines := removeLocalDuplicates(generatedHeadlines.Headlines)
-	filteredHeadline := filterAgainstStored(uniqueHeadlines, storedHeadlines)
+	// uniqueBytes, _ := json.Marshal(uniqueHeadlines)
+	// os.WriteFile("./test_data/uniqueHeadlines.json", uniqueBytes, 0644)
+
+	// match the unique generated headlines to the original using the IDs
+	matchedHeadlines := matchLocalHeadlines(uniqueHeadlines, batch)
+	// matchedBytes, _ := json.Marshal(matchedHeadlines)
+	// os.WriteFile("./test_data/matchedHeadlines.json", matchedBytes, 0644)
+
+	// filter the generated headlines from the stored and keep only new headlines
+	filteredHeadline := filterAgainstStored(matchedHeadlines, storedHeadlines)
+	// filteredBytes, _ := json.Marshal(filteredHeadline)
+	// os.WriteFile("./test_data/filteredHeadlines.json", filteredBytes, 0644)
 
 	if err := db.StoreBatchedHeadlines(ctx, filteredHeadline); err != nil {
-		slog.Error("Failed to store generated topics in db",
+		slog.Error("Failed to store generated headlines in db",
 			slog.String("error", err.Error()))
 		return err
 	}
@@ -156,36 +171,55 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 
 func buildChatMessage(headlines []models.Headline) []openai.ChatCompletionMessage {
 	systemMessage := `
-You will receive several news headlines as JSON objects.
-Respond ONLY with a valid JSON object, without any additional commentary.
-Each topic must have:
+You will receive several news headlines formatted as JSON objects.
 
-- "headline": The original "headline" as it was sent.
-- "queryable_headline": Concise, clear, and easily searchable (queryable).
-- "category": One of the following predefined categories:
-  - Technology
-  - Business & Finance
-  - Politics & World Affairs
-  - Entertainment & Pop Culture
-  - Health & Science
-  - Sports
-  - Lifestyle & Society
-  - Memes & Internet Trends
-  - Crime & Law
-- "id": return the same ID that was sent in the message
+Your task is to transform each headline into a queryable format and assign it to one of the predefined categories.
 
-JSON response structure:
+Instructions:
+
+Respond only with a valid JSON object. Do not include any additional text or commentary.
+
+For each headline object, include the following fields:
+
+- headline: The original headline as it was provided.
+
+- query: A concise, clear, and searchable version of the headline.
+    - **IMPORTANT** This field must not be empty or null. If no relevant query can be formed, return a simplified version of the headline instead.
+
+- category: One of the following categories:
+
+    Technology
+
+    Business & Finance
+
+    Politics & World Affairs
+
+    Entertainment & Pop Culture
+
+    Health & Science
+
+    Sports
+
+    Lifestyle & Society
+
+    Memes & Internet Trends
+
+    Crime & Law
+
+- id: Return the exact same ID that was received in the input.
+
+Expected JSON response format:
 {
-  "headines": [
+  "headlines": [
     {
-      "headline": "the original headline",
-      "queryable_headline": "queryable version of the headline",
-      "category": "Predefined Category",
-      "id": "return the exact value that was sent in the orginal request"
-    },
-    ...
+      "headline": "Original headline here",
+      "query": "Queryable version of the headline",
+      "category": "One of the predefined categories",
+      "id": "Same ID as provided"
+    }
   ]
 }
+
 `
 
 	messages := []openai.ChatCompletionMessage{
@@ -225,7 +259,7 @@ func cleanOpenAIResponse(response string) string {
 	endIdx := strings.LastIndex(response, "}")
 
 	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
-		slog.Error("Could not extract valid JSON from OpenAI response", slog.String("raw_response", response))
+		slog.Error("Could not extract valid JSON from OpenAI response")
 		return "" // or handle the error appropriately
 	}
 
@@ -245,11 +279,11 @@ func cleanOpenAIResponse(response string) string {
 
 // removeLocalDuplicates ensures the newly generated batch from OpenAI
 // doesn't contain duplicates among itself (by URL).
-func removeLocalDuplicates(headlines []models.Headline) []models.Headline {
+func removeLocalDuplicates(headlines []models.OpenAIHeadline) []models.OpenAIHeadline {
 	slog.Info("[TopicGenerator] Removing duplicate generated topics",
 		slog.Int("starting", len(headlines)))
 	seen := make(map[string]struct{})
-	var unique []models.Headline
+	var unique []models.OpenAIHeadline
 	for _, t := range headlines {
 		if _, exists := seen[t.ID]; !exists && t.ID != "" {
 			seen[t.ID] = struct{}{}
@@ -261,9 +295,56 @@ func removeLocalDuplicates(headlines []models.Headline) []models.Headline {
 	return unique
 }
 
+func matchLocalHeadlines(uniqueHeadlines []models.OpenAIHeadline, headlines []models.Headline) []models.Headline {
+	slog.Info("[TopicGenerator] Matching generated headlines to their original headlines")
+
+	seen := make(map[string]struct{}, len(uniqueHeadlines))
+	var matched []models.Headline
+
+	// map the unique headlines into a map for easier searching
+	uniqueMap := make(map[string]models.OpenAIHeadline, len(uniqueHeadlines))
+	for _, uh := range uniqueHeadlines {
+		if uh.ID != "" {
+			uniqueMap[uh.ID] = uh
+		}
+	}
+
+	// add the generate query and category while ignoring any duplicates
+	for _, h := range headlines {
+		if _, exists := seen[h.ID]; !exists && h.ID != "" {
+			unique := uniqueMap[h.ID]
+			fmt.Printf("%+v\n", unique)
+			headline := models.Headline{
+				ID:       h.ID,
+				Query:    unique.Query,
+				Category: unique.Category,
+				HeadlineMeta: models.HeadlineMeta{
+					Source:      h.HeadlineMeta.Source,
+					Title:       h.HeadlineMeta.Title,
+					Author:      h.HeadlineMeta.Author,
+					Description: h.HeadlineMeta.Description,
+					PublishedAt: h.HeadlineMeta.PublishedAt,
+					Url:         h.HeadlineMeta.Url,
+					UrlToImage:  h.HeadlineMeta.UrlToImage,
+				},
+			}
+			matched = append(matched, headline)
+			seen[h.ID] = struct{}{}
+		}
+	}
+
+	slog.Info("[TopicGenerator] Successfully matched generated headlines with the original request")
+	return matched
+}
+
 // filterAgainstStored removes any topics whose URL is already in storedTopics
 func filterAgainstStored(newHeadlines []models.Headline, storedHeadlines []models.Headline) []models.Headline {
 	slog.Info("[TopicGenerator] Removing topics that have been previously stored", slog.Int("starting", len(newHeadlines)))
+	// there are no stored headlines to filter against
+	if len(storedHeadlines) == 0 {
+		slog.Info("[TopicGenerator] Nothing stored, skipping...")
+		return newHeadlines
+	}
 	storedSet := make(map[string]struct{}, len(storedHeadlines))
 	for _, st := range storedHeadlines {
 		storedSet[st.ID] = struct{}{}

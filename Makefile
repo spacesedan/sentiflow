@@ -71,43 +71,44 @@ restart_image:
 	docker compose -f $(DOCKER_COMPOSE_FILE) restart $$service
 # DynamoDB
 #
-TOPICS_TABLE_NAME=Topics
+HEADLINE_TABLE_NAME=Headlines
 
 
-.PHONY: init_topics_table
-init_topics_table:
-	@echo "Creating '$(TOPICS_TABLE_NAME)' table in local DynamoDB..."
+.PHONY: init_headlines_table
+init_headlines_table:
+	@echo "Creating '$(HEADLINE_TABLE_NAME)' table in local DynamoDB..."
 	aws dynamodb create-table \
-		--table-name $(TOPICS_TABLE_NAME) \
+		--table-name $(HEADLINE_TABLE_NAME) \
 		--attribute-definitions \
-			AttributeName=url,AttributeType=S \
+			AttributeName=id,AttributeType=S \
 		--key-schema \
-			AttributeName=url,KeyType=HASH \
+			AttributeName=id,KeyType=HASH \
 		--billing-mode PAY_PER_REQUEST \
 		--region $(AWS_REGION) \
 		--endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: update_topics_table_ttl
-update_topics_table_ttl:
-	@echo "Enabling TTL attribute to '$(TOPICS_TABLE_NAME)'..."
+.PHONY: update_headlines_table_ttl
+update_headlines_table_ttl:
+	@echo "Enabling TTL attribute to '$(HEADLINE_TABLE_NAME)'..."
 	aws dynamodb update-time-to-live \
-    --table-name $(TOPICS_TABLE_NAME) \
+    --table-name $(HEADLINE_TABLE_NAME) \
     --time-to-live-specification "Enabled=true, AttributeName=expires_at" \
     --region $(AWS_REGION) \
     --endpoint-url $(DYNAMODB_ENDPOINT)
 
 
-.PHONY: update_topics_table_enable_streams
-update_topics_table_enable_streams:
-	@echo "Enabling Event Streaming on '$(TOPICS_TABLE_NAME)' ... "
+.PHONY: update_headlines_table_enable_streams
+update_headlines_table_enable_streams:
+	@echo "Enabling Event Streaming on '$(HEADLINE_TABLE_NAME)' ... "
 	aws dynamodb update-table \
-		--table-name $(TOPICS_TABLE_NAME) \
+		--table-name $(HEADLINE_TABLE_NAME) \
 		--stream-specification "StreamEnabled=true, StreamViewType=NEW_IMAGE" \
 		--region $(AWS_REGION) \
 		--endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: create_topics_table
-create_topics_table: init_topics_table update_topics_table_ttl update_topics_table_enable_streams
+.PHONY: create_headlines_table
+create_headlines_table: init_headlines_table update_headlines_table_ttl update_headlines_table_enable_streams
+
 SENTIMENT_ANALYSIS_TABLE_NAME=SentimentResults
 
 .PHONY: init_sentiment_table
@@ -145,28 +146,28 @@ update_sentiment_table_enable_streams:
 create_sentiment_table: init_sentiment_table update_sentiment_table_ttl update_sentiment_table_enable_streams
 
 .PHONY: create_tables
-create_tables: create_topics_table create_sentiment_table
+create_tables: create_headlines_table create_sentiment_table
 
 .PHONY: list_tables
 list_tables:
 	@echo "Listing all tables in DynamoDB..."
 	aws dynamodb list-tables --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: describe_topics_table
-describe_topics_table:
-	@echo "Describing the '$(TOPICS_TABLE_NAME)' table..."
-	aws dynamodb describe-table --table-name $(TOPICS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
+.PHONY: describe_headlines_table
+describe_headlines_table:
+	@echo "Describing the '$(HEADLINE_TABLE_NAME)' table..."
+	aws dynamodb describe-table --table-name $(HEADLINE_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
 .PHONY: describe_sentiment_table
 describe_sentiment_table:
 	@echo "Describing the '$(SENTIMENT_ANALYSIS_TABLE_NAME)' table..."
 	aws dynamodb describe-table --table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
-.PHONY: scan_topics_table
-scan_topics_table:
-	@echo "Scanning the '$(TOPICS_TABLE_NAME)' table ..."
+.PHONY: scan_headlines_table
+scan_headlines_table:
+	@echo "Scanning the '$(HEADLINE_TABLE_NAME)' table ..."
 	aws dynamodb scan \
-		--table-name $(TOPICS_TABLE_NAME) \
+		--table-name $(HEADLINE_TABLE_NAME) \
 		--limit 1 \
 		--output json \
 		--region $(AWS_REGION) \
@@ -184,10 +185,10 @@ scan_sentiment_table:
 		--endpoint-url $(DYNAMODB_ENDPOINT)
 
 # Delete All Tables
-.PHONY: delete_topics_table
-delete_topics_table:
-	@echo "Deleting table '$(TOPICS_TABLE_NAME)'..."
-	aws dynamodb delete-table --table-name $(TOPICS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
+.PHONY: delete_headlines_table
+delete_headlines_table:
+	@echo "Deleting table '$(HEADLINE_TABLE_NAME)'..."
+	aws dynamodb delete-table --table-name $(HEADLINE_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
 .PHONY: delete_sentiment_table
 delete_sentiment_table:
@@ -195,7 +196,7 @@ delete_sentiment_table:
 	aws dynamodb delete-table --table-name $(SENTIMENT_ANALYSIS_TABLE_NAME) --region $(AWS_REGION) --endpoint-url $(DYNAMODB_ENDPOINT)
 
 .PHONY: delete_tables
-delete_tables: delete_topics_table delete_sentiment_table
+delete_tables: delete_headlines_table delete_sentiment_table
 
 .PHONY: reset_tables
 reset_tables: delete_tables create_tables

@@ -122,7 +122,7 @@ func headlineToDynamonDBItem(headline models.Headline) map[string]types.Attribut
 	metadata["url"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.Url}
 	metadata["urlToImage"] = &types.AttributeValueMemberS{Value: headline.HeadlineMeta.UrlToImage}
 
-	item["metadata"] = &types.AttributeValueMemberM{Value: metadata}
+	item["headline_meta"] = &types.AttributeValueMemberM{Value: metadata}
 
 	return item
 }
