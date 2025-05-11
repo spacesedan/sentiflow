@@ -2,10 +2,16 @@ package clients
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
+)
+
+const (
+	openAIRequestTimeout = 60 * time.Second // Timeout for individual OpenAI API requests
 )
 
 var (
@@ -24,9 +30,16 @@ func GetOpenAIClient() *OpenAIClient {
 		panic("[OpenAICLient] Missing OPENAI_API_KEY in environment variables")
 	}
 	openAIOnce.Do(func() {
-		openAIClientInstance = &OpenAIClient{
-			Client: openai.NewClient(apiKey),
+		config := openai.DefaultConfig(apiKey)
+		httpClient := &http.Client{
+			Timeout: openAIRequestTimeout,
 		}
+		config.HTTPClient = httpClient
+
+		openAIClientInstance = &OpenAIClient{
+			Client: openai.NewClientWithConfig(config),
+		}
+		slog.Info("[OpenAIClient] OpenAI client initialized with custom HTTP timeout", slog.Duration("timeout", openAIRequestTimeout))
 	})
 	return openAIClientInstance
 }
