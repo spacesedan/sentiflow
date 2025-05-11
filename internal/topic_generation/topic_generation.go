@@ -212,14 +212,14 @@ For each headline object, include the following fields:
 
 - headline: The original headline as it was provided.
     - **CRITICAL**: The string value for the 'headline' field must be a valid JSON string value.
-    - All forms of double quotation marks from the original headline (e.g., standard `"` (U+0022), left curly `“` (U+201C), right curly `”` (U+201D)) MUST be converted to standard double quotes (`"`, U+0022) in the output string value.
-    - These standard double quotes (`"`), and any backslashes (`\`), that appear as part of the headline's text MUST then be properly escaped (e.g., `\"` for a quote, `\\` for a backslash).
-    - For example, if an input headline is `Her "official" title is “Top Coder”.`, it should be represented in the JSON as `"headline": "Her \"official\" title is \"Top Coder\"."`.
+    - All forms of double quotation marks from the original headline (e.g., standard '"' (U+0022), left curly '“' (U+201C), right curly '”' (U+201D)) MUST be converted to standard double quotes ('"', U+0022) in the output string value.
+    - These standard double quotes ('"'), and any backslashes ('\'), that appear as part of the headline's text MUST then be properly escaped (e.g., '\"' for a quote, '\\' for a backslash).
+    - For example, if an input headline is 'Her "official" title is “Top Coder”.', it should be represented in the JSON as `"headline": "Her \"official\" title is \"Top Coder\"."`.
 
 - query: A concise, clear, and searchable version of the headline.
     - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
     - If a specific, searchable query cannot be reasonably formed from the headline, YOU MUST use the original headline text itself as the value for the 'query' field.
-    - DO NOT under any circumstances return an empty string (e.g., "") or a null value for the 'query' field.
+    - DO NOT under any circumstances return an empty string (e.g., '""') or a null value for the 'query' field.
 
 - category: One of the following categories:
 
