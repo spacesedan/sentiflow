@@ -287,29 +287,51 @@ Expected JSON response format:
 }
 
 func cleanOpenAIResponse(response string) string {
-	response = strings.TrimSpace(response)
+	// 1. Initial trim of whitespace from the raw response.
+	cleaned := strings.TrimSpace(response)
 
-	// Find the first '{' and the last '}' to extract only JSON.
-	startIdx := strings.Index(response, "{")
-	endIdx := strings.LastIndex(response, "}")
+	// 2. Remove Markdown code block fences if present.
+	// Handles "```json\n{...}\n```" or "```\n{...}\n```"
+	// Also handles cases where only prefix or suffix exists, or content is not json.
+	if strings.HasPrefix(cleaned, "```json") {
+		cleaned = strings.TrimPrefix(cleaned, "```json")
+		// It's common for a newline to be after ```json
+		cleaned = strings.TrimPrefix(cleaned, "\n")
+		cleaned = strings.TrimSuffix(cleaned, "```")
+	} else if strings.HasPrefix(cleaned, "```") {
+		cleaned = strings.TrimPrefix(cleaned, "```")
+		cleaned = strings.TrimPrefix(cleaned, "\n")
+		cleaned = strings.TrimSuffix(cleaned, "```")
+	}
+	// Trim any whitespace that might have been left after removing fences,
+	// or if there were no fences initially.
+	cleaned = strings.TrimSpace(cleaned)
 
-	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
-		slog.Error("Could not extract valid JSON from OpenAI response")
-		return "" // or handle the error appropriately
+	// 3. Ensure the result looks like a JSON object (starts with { and ends with }).
+	// This is a basic check; the content itself must still be valid JSON.
+	if !(strings.HasPrefix(cleaned, "{") && strings.HasSuffix(cleaned, "}")) {
+		originalResponseSnippet := response
+		snippetLen := 100
+		if len(originalResponseSnippet) > snippetLen {
+			originalResponseSnippet = originalResponseSnippet[:snippetLen] + "..."
+		}
+
+		cleanedResponseSnippet := cleaned
+		if len(cleanedResponseSnippet) > snippetLen {
+			cleanedResponseSnippet = cleanedResponseSnippet[:snippetLen] + "..."
+		}
+
+		slog.Error("OpenAI response does not appear to be a JSON object after cleaning",
+			slog.String("original_response_snippet", originalResponseSnippet),
+			slog.String("cleaned_response_snippet", cleanedResponseSnippet))
+		return "" // Return empty, indicating cleaning failed to produce a JSON-like object.
 	}
 
-	response = response[startIdx : endIdx+1]
-
-	// Remove Markdown code block if present.
-	response = strings.TrimPrefix(response, "```json")
-	response = strings.TrimSuffix(response, "```")
-
-	// Standardize quotes
-	response = strings.ReplaceAll(response, "\u0022", `"`)
-	response = strings.ReplaceAll(response, "\u201C", `"`)
-	response = strings.ReplaceAll(response, "\u201D", `"`)
-
-	return strings.TrimSpace(response)
+	// 4. Return the cleaned string. No further quote standardization is performed.
+	// The responsibility for correct JSON (including escaped quotes within strings)
+	// is on OpenAI, as per the detailed system prompt. If OpenAI fails,
+	// the subsequent json.Unmarshal will fail and log the problematic 'cleaned' string.
+	return cleaned
 }
 
 // removeLocalDuplicates ensures the newly generated batch from OpenAI
@@ -414,4 +436,13 @@ func filterAgainstStored(newHeadlines []models.Headline, storedHeadlines []model
 	slog.Info("[TopicGenerator] Successfully filtered out generated topics",
 		slog.Int("ending", len(final)))
 	return final
+}
+
+// min returns the smaller of x or y.
+// Used for safely creating log snippets.
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
 }
