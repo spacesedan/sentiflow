@@ -86,7 +86,7 @@ func processSentimentResult(ctx context.Context, result models.SentimentAnalysis
 
 	slog.Info("Successfully indexed sentiment result in OpenSearch", "contentId", result.ContentID, "documentID", result.ContentID, "result", res.Result, "statusCode", res.Inspect().Response.StatusCode)
 
-	// Insert/Update in PostgreSQL
+	//TODO: Insert/Update in PostgreSQL
 	// Assuming you will have a postgresClient available, perhaps via clients.GetPostgresClient()
 	// and it will have a method like StoreSentimentResult.
 	/*
