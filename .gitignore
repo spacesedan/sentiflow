@@ -38,6 +38,7 @@ deploy/docker/envs/.env.*
 
 # Docker
 deploy/docker/dynamodb/*
+deploy/docker/dynamodb/shared-local-instance.db
 
 #
 # Terraform Specific
