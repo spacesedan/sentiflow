@@ -46,32 +46,32 @@ func InitCategoryHelpers() {
 }
 
 // mapTopicsToCategory creates a map of topics that can be used to create queries for the Reddit API
-func mapTopicsToCategory(topics []models.Topic) map[string][]models.Topic {
-	topicMap := make(map[string][]models.Topic)
+func mapHeadlinesToCategory(headlines []models.Headline) map[string][]models.Headline {
+	headlineMap := make(map[string][]models.Headline)
 
-	for _, topic := range topics {
-		topicMap[topic.Category] = append(topicMap[topic.Category], topic)
+	for _, headline := range headlines {
+		headlineMap[headline.Category] = append(headlineMap[headline.Category], headline)
 	}
 
-	return topicMap
+	return headlineMap
 }
 
 // FetchRedditContentForTopics fetches Reddit posts based on stored topics & sends to Kafka
-func FetchRedditContentForTopics(ctx context.Context) {
+func FetchRedditContentForHeadlines(ctx context.Context) {
 	slog.Info("Fetching Reddit content for stored topics...")
 
-	topics, err := db.GetAllTopics()
+	headlines, err := db.GetAllHeadlines()
 	if err != nil {
-		slog.Error("Failed to fetch topics from DB", slog.String("error", err.Error()))
+		slog.Error("Failed to fetch headlines from DB", slog.String("error", err.Error()))
 		return
 	}
 
-	if len(topics) == 0 {
+	if len(headlines) == 0 {
 		slog.Warn("No new topics found. Skipping Reddit fetch.")
 		return
 	}
 
-	topicMap := mapTopicsToCategory(topics)
+	headlinesMap := mapHeadlinesToCategory(headlines)
 
 	// Process each query
 	for _, category := range Categories {
@@ -81,10 +81,10 @@ func FetchRedditContentForTopics(ctx context.Context) {
 			continue
 		}
 
-		for _, topic := range topicMap[category] {
-			if err := fetchAndProcessTopics(ctx, subreddits, topic); err != nil {
+		for _, headline := range headlinesMap[category] {
+			if err := fetchAndProcessHeadline(ctx, subreddits, headline); err != nil {
 				slog.Error("Failed processing topic",
-					slog.String("topic", topic.Topic))
+					slog.String("query", headline.Query))
 			}
 		}
 	}
@@ -92,18 +92,18 @@ func FetchRedditContentForTopics(ctx context.Context) {
 	slog.Info("Successfully fetched & sent Reddit content to Kafka!")
 }
 
-func fetchAndProcessTopics(ctx context.Context, subreddits string, topic models.Topic) error {
+func fetchAndProcessHeadline(ctx context.Context, subreddits string, headline models.Headline) error {
 	after := ""
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Warn("Context cancelled, stopping fetch for topic",
-				slog.String("topic", topic.Topic))
+				slog.String("query", headline.Query))
 			return ctx.Err()
 		default:
 		}
 
-		posts, nextAfter, err := fetchWithRetries(ctx, subreddits, topic.Topic, after)
+		posts, nextAfter, err := fetchWithRetries(ctx, subreddits, headline.Query, after)
 		if err != nil {
 			return fmt.Errorf("fetch failed after retries: %w", err)
 		}

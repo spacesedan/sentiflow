@@ -54,13 +54,13 @@ func main() {
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 
-	producer.FetchRedditContentForTopics(ctx)
+	producer.FetchRedditContentForHeadlines(ctx)
 
 	for {
 		select {
 
 		case <-redditTicker.C:
-			producer.FetchRedditContentForTopics(ctx)
+			producer.FetchRedditContentForHeadlines(ctx)
 
 		case <-stopChan:
 			slog.Info("Shutting down producer gracefully...")
