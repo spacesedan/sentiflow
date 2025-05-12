@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -23,13 +25,12 @@ func ProcessHeadlineRecord(ctx context.Context, record events.DynamoDBEventRecor
 	newImage := record.Change.NewImage
 
 	var headline models.Headline
-	// Use the new UnmarshalEventStreamImage from internal/streams/unmarshal.go (implicitly, as it's in the same package)
 	err := UnmarshalEventStreamImage(newImage, &headline)
 	if err != nil {
 		slog.Error("Failed to unmarshal headline from DynamoDB stream record",
 			"eventId", record.EventID,
 			"error", err.Error())
-		return err // Returning error will cause Lambda to retry or send to DLQ based on configuration
+		return err
 	}
 
 	slog.Info("Successfully unmarshalled headline",
@@ -37,7 +38,7 @@ func ProcessHeadlineRecord(ctx context.Context, record events.DynamoDBEventRecor
 		"headlineId", headline.ID,
 		"query", headline.Query,
 		"category", headline.Category,
-		"sentimentScore", headline.SentimentScore, // Will log 0 if omitempty and not set
+		"sentimentScore", headline.SentimentScore,
 		"source", headline.HeadlineMeta.Source,
 		"title", headline.HeadlineMeta.Title,
 		"author", headline.HeadlineMeta.Author,
@@ -67,16 +68,15 @@ func processHeadline(ctx context.Context, headline models.Headline) error {
 		"source", headline.HeadlineMeta.Source,
 		"title", headline.HeadlineMeta.Title,
 		"author", headline.HeadlineMeta.Author,
-		"description", headline.HeadlineMeta.Description, // Added description
+		"description", headline.HeadlineMeta.Description,
 		"publishedAt", headline.HeadlineMeta.PublishedAt,
-		"url", headline.HeadlineMeta.Url, // Added URL
-		"urlToImage", headline.HeadlineMeta.UrlToImage) // Added URL to image
+		"url", headline.HeadlineMeta.Url,
+		"urlToImage", headline.HeadlineMeta.UrlToImage)
 
 	// Index in OpenSearch
 	opensearchClient := clients.GetOpensearchClient(ctx).Client
 	if opensearchClient == nil {
 		slog.Error("OpenSearch client is not initialized in processHeadline")
-		// Depending on requirements, you might want to return an error or panic
 		return fmt.Errorf("opensearch client not initialized for headlineId %s", headline.ID)
 	}
 
@@ -86,31 +86,27 @@ func processHeadline(ctx context.Context, headline models.Headline) error {
 		return fmt.Errorf("failed to marshal headline %s to JSON: %w", headline.ID, err)
 	}
 
-	documentID := headline.ID // Use the ID field from models.Headline
+	documentID := headline.ID
 
-	// opensearchClient is *opensearchapi.Client
-	// Use opensearchapi.IndexReq as per the new example
 	indexReq := opensearchapi.IndexReq{
 		Index:      "headlines",
 		DocumentID: documentID,
 		Body:       bytes.NewReader(headlineJSON),
-		Params: opensearchapi.IndexParams{ // Pass Refresh via Params
+		Params: opensearchapi.IndexParams{
 			Refresh: "true",
 		},
 	}
 
-	res, err := opensearchClient.Index(ctx, indexReq) // Use client.Index
+	res, err := opensearchClient.Index(ctx, indexReq)
 	if err != nil {
 		slog.Error("Failed to index headline in OpenSearch (call failed)", "headlineId", headline.ID, "error", err)
 		return fmt.Errorf("opensearch client.Index call failed for headline %s: %w", headline.ID, err)
 	}
-	// opensearchapi.IndexResp embeds opensearchapi.Response
-	// We can check res.HasErr()
 	if res.Inspect().Response.IsError() {
 		errMsg := fmt.Sprintf("OpenSearch returned an error during headline indexing (response error) for headlineId %s: status %s, details %s",
 			headline.ID, res.Inspect().Response.Status(), res.Inspect().Response.String())
 		slog.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	slog.Info("Successfully indexed headline in OpenSearch", "headlineId", headline.ID, "documentID", documentID, "result", res.Result, "statusCode", res.Inspect().Response.StatusCode)

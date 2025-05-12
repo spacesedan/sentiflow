@@ -8,13 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	// Keep time if processSentimentResult uses it, otherwise can remove
 	"github.com/aws/aws-lambda-go/events"
-	// "github.com/aws/aws-sdk-go-v2/aws" // No longer needed for ListStreams etc.
-	// "github.com/aws/aws-sdk-go-v2/service/dynamodbstreams" // No longer needed
-	// "github.com/aws/aws-sdk-go-v2/service/dynamodbstreams/types" // No longer needed
-	// "github.com/spacesedan/sentiflow/internal/db" // No longer needed for TableName
-	"github.com/opensearch-project/opensearch-go/v4/opensearchapi" // Use opensearchapi package
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 	"github.com/spacesedan/sentiflow/internal/clients"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
@@ -45,7 +40,6 @@ func ProcessSentimentRecord(ctx context.Context, record events.DynamoDBEventReco
 		"headline", result.Topic) // Assuming result.Topic from RawContent now holds the headline string
 
 	if err := processSentimentResult(ctx, result); err != nil { // Assuming processSentimentResult might also need context
-		// Error is already logged within processSentimentResult
 		return err // Propagate the error
 	}
 	return nil
@@ -69,8 +63,6 @@ func processSentimentResult(ctx context.Context, result models.SentimentAnalysis
 		return fmt.Errorf("failed to marshal sentiment result %s to JSON: %w", result.ContentID, err)
 	}
 
-	// opensearchClient is *opensearchapi.Client
-	// Use opensearchapi.IndexReq as per the new example
 	indexReq := opensearchapi.IndexReq{
 		Index:      "sentiment_results",
 		DocumentID: result.ContentID,
@@ -85,8 +77,6 @@ func processSentimentResult(ctx context.Context, result models.SentimentAnalysis
 		slog.Error("Failed to index sentiment result in OpenSearch (call failed)", "contentId", result.ContentID, "error", err)
 		return fmt.Errorf("opensearch client.Index call failed for contentId %s: %w", result.ContentID, err)
 	}
-	// opensearchapi.IndexResp embeds opensearchapi.Response
-	// We can check res.HasErr() // Note: headline_stream.go uses Inspect().Response.IsError()
 	if res.Inspect().Response.IsError() {
 		errMsg := fmt.Sprintf("OpenSearch returned an error during sentiment result indexing (response error) for contentId %s: status %s, details %s",
 			result.ContentID, res.Inspect().Response.Status(), res.Inspect().Response.String())
