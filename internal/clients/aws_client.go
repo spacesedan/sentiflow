@@ -27,7 +27,7 @@ func GetAWSConfig() aws.Config {
 
 		slog.Info("[AWSClient] Initializing AWS Config...")
 		// TODO: add environment based config
-		cfg, err := config.LoadDefaultConfig(context.TODO(),
+		cfg, err := config.LoadDefaultConfig(context.Background(), // Changed context.TODO() to context.Background()
 			config.WithRegion("us-west-2"))
 		if err != nil {
 			slog.Error("[AWSClient] Failed to load AWS config")

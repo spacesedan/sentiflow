@@ -12,6 +12,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
 
 var (
@@ -20,7 +21,7 @@ var (
 )
 
 type Opensearch struct {
-	Client *opensearch.Client
+	Client *opensearchapi.Client // Changed to *opensearchapi.Client
 }
 
 func GetOpensearchClient(ctx context.Context) Opensearch {
@@ -55,13 +56,19 @@ func GetOpensearchClient(ctx context.Context) Opensearch {
 			}
 		}
 
-		client, err := opensearch.NewClient(cfg)
+		// cfg is of type opensearch.Config
+		// We need to wrap it in opensearchapi.Config
+		apiCfg := opensearchapi.Config{
+			Client: cfg, // Embed the opensearch.Config here
+		}
+
+		client, err := opensearchapi.NewClient(apiCfg) // Use opensearchapi.NewClient
 		if err != nil {
-			log.Fatalf("failed to initialize OpenSearch Client: %v", err.Error())
+			log.Fatalf("failed to initialize OpenSearch API Client: %v", err.Error())
 		}
 
 		opensearchInstance = Opensearch{
-			client,
+			Client: client,
 		}
 	})
 	return opensearchInstance

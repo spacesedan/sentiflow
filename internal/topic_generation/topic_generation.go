@@ -153,7 +153,7 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
 			},
 		})
-		
+
 		attemptCancel() // Release resources associated with attemptCtx immediately.
 
 		if completionErr == nil {
@@ -164,7 +164,7 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 			slog.String("error", completionErr.Error()),
 			slog.Int("attempt", i+1),
 			slog.Duration("elapsed", time.Since(start)))
-		
+
 		// If the loop continues, it means completionErr is not nil.
 		// The next iteration will again check ctx.Done() and create a new attemptCtx.
 	}

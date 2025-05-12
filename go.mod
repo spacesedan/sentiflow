@@ -3,6 +3,7 @@ module github.com/spacesedan/sentiflow
 go 1.23.4
 
 require (
+	github.com/aws/aws-lambda-go v1.47.0
 	github.com/aws/aws-sdk-go-v2 v1.36.2
 	github.com/aws/aws-sdk-go-v2/config v1.29.7
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.18.5
@@ -16,7 +17,6 @@ require (
 	github.com/valkey-io/valkey-go v1.0.55
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa
 	golang.org/x/oauth2 v0.26.0
-	google.golang.org/protobuf v1.36.5
 )
 
 require (

@@ -1,97 +1,118 @@
 package streams
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams/types"
+	// Keep time if processSentimentResult uses it, otherwise can remove
+	"github.com/aws/aws-lambda-go/events"
+	// "github.com/aws/aws-sdk-go-v2/aws" // No longer needed for ListStreams etc.
+	// "github.com/aws/aws-sdk-go-v2/service/dynamodbstreams" // No longer needed
+	// "github.com/aws/aws-sdk-go-v2/service/dynamodbstreams/types" // No longer needed
+	// "github.com/spacesedan/sentiflow/internal/db" // No longer needed for TableName
+	"github.com/opensearch-project/opensearch-go/v4/opensearchapi" // Use opensearchapi package
 	"github.com/spacesedan/sentiflow/internal/clients"
-	"github.com/spacesedan/sentiflow/internal/db"
 	"github.com/spacesedan/sentiflow/internal/models"
 )
 
-func StartSentimentStreamConsumer(ctx context.Context) error {
-	client := clients.GetDynamoDBStreamClient()
+// ProcessSentimentRecord handles a single DynamoDB stream record for a sentiment result.
+// This function would be called by a Lambda handler configured for the sentiment analysis stream.
+func ProcessSentimentRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
+	if record.EventName != "INSERT" {
+		slog.Debug("Skipping non-INSERT event for sentiment record", "eventId", record.EventID, "eventName", record.EventName)
+		return nil
+	}
 
-	streams, err := client.ListStreams(ctx, &dynamodbstreams.ListStreamsInput{
-		TableName: aws.String(db.SENTIMENT_ANALYSIS_TABLE_NAME),
-	})
+	newImage := record.Change.NewImage
+	var result models.SentimentAnalysisResult
+
+	// Use the UnmarshalEventStreamImage from internal/streams/unmarshal.go (implicitly, as it's in the same package)
+	err := UnmarshalEventStreamImage(newImage, &result)
 	if err != nil {
-		slog.Error("[SentimentResultsStreamConsumer] Error occured when listing streams...", slog.String("err", err.Error()))
+		slog.Error("Failed to unmarshal sentiment result from DynamoDB stream record",
+			"eventId", record.EventID,
+			"error", err.Error())
 		return err
 	}
 
-	streamArn := streams.Streams[0].StreamArn
+	slog.Info("Successfully unmarshalled sentiment result",
+		"eventId", record.EventID,
+		"contentId", result.ContentID,
+		"headline", result.Topic) // Assuming result.Topic from RawContent now holds the headline string
 
-	describeOutput, err := client.DescribeStream(ctx, &dynamodbstreams.DescribeStreamInput{
-		StreamArn: streamArn,
-	})
-	if err != nil {
-		slog.Error("[SentimentResultsStreamConsumer] Failed to describe stream",
-			slog.String("error", err.Error()))
-		return err
-	}
-
-	for _, shard := range describeOutput.StreamDescription.Shards {
-		shardIteratorOutput, err := client.GetShardIterator(ctx,
-			&dynamodbstreams.GetShardIteratorInput{
-				StreamArn:         streamArn,
-				ShardId:           shard.ShardId,
-				ShardIteratorType: types.ShardIteratorTypeLatest,
-			})
-		if err != nil {
-			slog.Error("[SentimentResultsStreamConsumer] Failed to get shard iterator",
-				slog.String("shard_id", *shard.ShardId),
-				slog.String("error", err.Error()))
-
-			continue
-		}
-
-		shardIterator := shardIteratorOutput.ShardIterator
-
-		for shardIterator != nil {
-			recordsOutput, err := client.GetRecords(
-				ctx,
-				&dynamodbstreams.GetRecordsInput{
-					ShardIterator: shardIterator,
-				})
-			if err != nil {
-				slog.Error("[SentimentResultsStreamConsumer] Failed to get records",
-					slog.String("shard_id", *shard.ShardId),
-					slog.String("error", err.Error()))
-				break
-			}
-
-			for _, record := range recordsOutput.Records {
-				if record.EventName != types.OperationTypeInsert {
-					continue
-				}
-
-				newImage := record.Dynamodb.NewImage
-
-				var result models.SentimentAnalysisResult
-				err := unmarshalStreamImage(newImage, &result)
-				if err != nil {
-					slog.Error("[SentimentResultsStreamConsumer] failed to unmarshal topic",
-						slog.String("error", err.Error()))
-					continue
-				}
-
-				slog.Info("[SentimentResultsStreamConsumer] Received new result",
-					slog.String("result_id", result.ContentID),
-					slog.String("topic", result.Topic))
-
-				go processSentimentResult(result)
-
-			}
-			shardIterator = recordsOutput.NextShardIterator
-			time.Sleep(500 * time.Millisecond)
-		}
+	if err := processSentimentResult(ctx, result); err != nil { // Assuming processSentimentResult might also need context
+		// Error is already logged within processSentimentResult
+		return err // Propagate the error
 	}
 	return nil
 }
 
-func processSentimentResult(result models.SentimentAnalysisResult) {}
+// processSentimentResult is a placeholder for your business logic to handle a new sentiment analysis result.
+// Adding context.Context in case it's needed for downstream calls.
+func processSentimentResult(ctx context.Context, result models.SentimentAnalysisResult) error {
+	slog.Info("Processing sentiment result", "contentId", result.ContentID, "label", result.SentimentLabel)
+
+	// Index in OpenSearch
+	opensearchClient := clients.GetOpensearchClient(ctx).Client
+	if opensearchClient == nil {
+		slog.Error("OpenSearch client is not initialized in processSentimentResult")
+		return fmt.Errorf("opensearch client not initialized for contentId %s", result.ContentID)
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		slog.Error("Failed to marshal sentiment result to JSON", "contentId", result.ContentID, "error", err)
+		return fmt.Errorf("failed to marshal sentiment result %s to JSON: %w", result.ContentID, err)
+	}
+
+	// opensearchClient is *opensearchapi.Client
+	// Use opensearchapi.IndexReq as per the new example
+	indexReq := opensearchapi.IndexReq{
+		Index:      "sentiment_results",
+		DocumentID: result.ContentID,
+		Body:       bytes.NewReader(resultJSON),
+		Params: opensearchapi.IndexParams{ // Pass Refresh via Params
+			Refresh: "true",
+		},
+	}
+
+	res, err := opensearchClient.Index(ctx, indexReq) // Use client.Index
+	if err != nil {
+		slog.Error("Failed to index sentiment result in OpenSearch (call failed)", "contentId", result.ContentID, "error", err)
+		return fmt.Errorf("opensearch client.Index call failed for contentId %s: %w", result.ContentID, err)
+	}
+	// opensearchapi.IndexResp embeds opensearchapi.Response
+	// We can check res.HasErr() // Note: headline_stream.go uses Inspect().Response.IsError()
+	if res.Inspect().Response.IsError() {
+		errMsg := fmt.Sprintf("OpenSearch returned an error during sentiment result indexing (response error) for contentId %s: status %s, details %s",
+			result.ContentID, res.Inspect().Response.Status(), res.Inspect().Response.String())
+		slog.Error(errMsg)
+		return errors.New(errMsg)
+	}
+
+	slog.Info("Successfully indexed sentiment result in OpenSearch", "contentId", result.ContentID, "documentID", result.ContentID, "result", res.Result, "statusCode", res.Inspect().Response.StatusCode)
+
+	// Insert/Update in PostgreSQL
+	// Assuming you will have a postgresClient available, perhaps via clients.GetPostgresClient()
+	// and it will have a method like StoreSentimentResult.
+	/*
+		pgClient := clients.GetPostgresClient() // Or however you access your initialized PG client
+		if pgClient != nil { // Check if client is properly initialized
+			err = pgClient.StoreSentimentResult(ctx, result) // Replace with actual method call
+			if err != nil {
+				slog.Error("Failed to store sentiment result in PostgreSQL", "contentId", result.ContentID, "error", err)
+				// Decide on error handling
+			} else {
+				slog.Info("Successfully stored sentiment result in PostgreSQL", "contentId", result.ContentID)
+			}
+		} else {
+			slog.Error("PostgreSQL client not initialized. Skipping database insertion for sentiment result.", "contentId", result.ContentID)
+		}
+	*/
+	slog.Info("PostgreSQL insertion placeholder for sentiment result. TODO: Implement client and uncomment.", "contentId", result.ContentID)
+	return nil
+}
