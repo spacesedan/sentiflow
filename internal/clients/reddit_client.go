@@ -217,7 +217,7 @@ func minDuration(a, b time.Duration) time.Duration {
 }
 
 // parseRedditResponse parses the JSON response from Reddit API into structured RedditPost objects
-func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, string, error) {
+func parseRedditResponse(rawData []byte, query string) ([]models.RedditPost, string, error) {
 	var redditResponse models.RedditAPIResponse
 	err := json.Unmarshal(rawData, &redditResponse)
 	if err != nil {
@@ -229,7 +229,7 @@ func parseRedditResponse(rawData []byte, topic string) ([]models.RedditPost, str
 	for _, item := range redditResponse.Data.Children {
 		post := item.Data
 		posts = append(posts, models.RedditPost{
-			Topic:       topic,
+			Query:       query,
 			Subreddit:   post.Subreddit,
 			PostTitle:   post.Title,
 			Author:      post.AuthorFullname,

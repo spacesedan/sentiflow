@@ -201,3 +201,52 @@ delete_tables: delete_headlines_table delete_sentiment_table
 .PHONY: reset_tables
 reset_tables: delete_tables create_tables
 
+DB_USER=myuser
+DB_PASSWORD=mypassword
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=mydb
+# POSTGRES_SSLMODE is not strictly needed here as sslmode=disable is hardcoded in the command
+# but it's good to keep for consistency if you add other targets that might use it.
+POSTGRES_SSLMODE=disable
+
+.PHONY: migration
+migration:
+	@echo "Running database migrations up..."
+	@migrate -database \
+	"postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable" \
+	-path ./db/migrations/postgres up
+	@echo "Migrations complete."
+
+# It's also good practice to have a target for migrating down
+.PHONY: migrate-down-one
+migrate-down-one:
+	@echo "Rolling back the last database migration..."
+	@migrate -database \
+	"postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable" \
+	-path ./db/migrations/postgres down 1
+	@echo "Rollback complete."
+
+# And a target to create new migration files
+# Usage: make migrate-create
+.PHONY: migrate-create
+migrate-create:
+	@read -p "Enter the migration name (e.g., add_users_table): " migration_name; \
+	if [ -z "$$migration_name" ]; then \
+		echo "ERROR: Migration name is required!"; \
+		exit 1; \
+	fi; \
+	echo "Creating new migration files for: $$migration_name..."; \
+	migrate create -ext sql -dir ./db/migrations/postgres -seq $$migration_name; \
+	echo "New migration files created for: $$migration_name."
+
+.PHONY: sqlc-generate
+sqlc-generate:
+	@echo "Generating Go code from SQL queries using sqlc..."
+	@DB_USER=$(DB_USER) \
+	DB_PASSWORD=$(DB_PASSWORD) \
+	DB_HOST=$(DB_HOST) \
+	DB_PORT=$(DB_PORT) \
+	DB_NAME=$(DB_NAME) \
+	sqlc generate
+	@echo "sqlc code generation complete."

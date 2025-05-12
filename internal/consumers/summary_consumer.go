@@ -187,7 +187,7 @@ func buildSummarizedSentimentInput(request models.SentimentAnalysisInput, summar
 		RawContent: models.RawContent{
 			ContentID: request.ContentID,
 			Source:    request.Source,
-			Topic:     request.Topic,
+			Query:     request.Query,
 			Metadata:  request.Metadata,
 		},
 		Text:          summary,

@@ -5,7 +5,8 @@ import "time"
 type RawContent struct {
 	ContentID string          `json:"content_id"`
 	Source    string          `json:"source"`
-	Topic     string          `json:"topic"`
+	Query     string          `json:"query"`
+	Topic     string          `json:"topic,omitempty" dynamodbav:"topic,omitempty"` // Added Topic field
 	Text      string          `json:"text"`
 	Metadata  ContentMetadata `json:"metadata"`
 }

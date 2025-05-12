@@ -218,7 +218,7 @@ func ResultToDynamoDBItem(result models.SentimentAnalysisResult) map[string]type
 
 	// Required fields (snake_case keys)
 	item["content_id"] = &types.AttributeValueMemberS{Value: result.ContentID}
-	item["topic"] = &types.AttributeValueMemberS{Value: result.Topic}
+	item["query"] = &types.AttributeValueMemberS{Value: result.Query}
 	item["sentiment_score"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", result.SentimentScore)}
 	item["sentiment_label"] = &types.AttributeValueMemberS{Value: result.SentimentLabel}
 	item["confidence"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%f", result.Confidence)}

@@ -1,0 +1,22 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "db/migrations/postgres/"
+    queries: "db/queries/postgres/"
+    # It's important to include the database connection URI for sqlc to
+    # connect to your database during generation. This helps with type
+    # inference, especially for functions like UNNEST.
+    # Ensure your DB environment variables (DB_USER, DB_PASSWORD, etc.) are set
+    # in your shell when running `sqlc generate` as they are used in the URI below.
+    database:
+      uri: "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_json_tags: true
+        emit_prepared_queries: false
+        emit_exact_table_names: false
+        emit_empty_slices: true

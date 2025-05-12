@@ -152,7 +152,7 @@ func processPosts(ctx context.Context, posts []models.RedditPost) {
 		default:
 		}
 
-		dedupeKey := fmt.Sprintf("%s:%s", post.Topic, post.PostID)
+		dedupeKey := fmt.Sprintf("%s:%s", post.Query, post.PostID)
 
 		if post.PostContent == "" || clients.GetValkeyClient().IsPostProcessed(ctx, "reddit", dedupeKey) {
 			continue
@@ -184,9 +184,9 @@ func generateRedditContentID(topic, source, postID string) string {
 func redditPostToRaw(p models.RedditPost) models.RawContent {
 	source := "reddit"
 	return models.RawContent{
-		ContentID: generateRedditContentID(p.Topic, source, p.PostID),
+		ContentID: generateRedditContentID(p.Query, source, p.PostID),
 		Source:    source,
-		Topic:     p.Topic,
+		Query:     p.Query,
 		Text:      p.PostContent,
 		Metadata: models.ContentMetadata{
 			Author:    p.Author,

@@ -3,7 +3,7 @@ package models
 import "time"
 
 type RedditPost struct {
-	Topic       string    `json:"topic"`
+	Query       string    `json:"query"`
 	Subreddit   string    `json:"subreddit"`
 	Author      string    `json:"author"`
 	PostTitle   string    `json:"post_title"`
