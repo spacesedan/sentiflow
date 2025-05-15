@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -227,9 +228,13 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 	matchedHeadlines := matchLocalHeadlines(uniqueHeadlines, batch) // matchedHeadlines is []models.Headline
 
 	// filter the generated headlines from the stored and keep only new headlines
-	filteredHeadline := filterAgainstStored(matchedHeadlines, storedHeadlines)
+	filteredHeadlines := filterAgainstStored(matchedHeadlines, storedHeadlines)
 
-	if err := db.StoreBatchedHeadlines(ctx, filteredHeadline); err != nil {
+	filteredBytes, _ := json.Marshal(filteredHeadlines)
+	os.WriteFile(fmt.Sprintf("./test_data/filterHeadlines%d.json", time.Now().UnixMicro()), filteredBytes, 0644)
+	os.Exit(1)
+
+	if err := db.StoreBatchedHeadlines(ctx, filteredHeadlines); err != nil {
 		slog.Error("Failed to store generated headlines in db",
 			slog.String("error", err.Error()))
 		return err
@@ -240,55 +245,55 @@ func processHeadlineBatch(ctx context.Context, storedHeadlines []models.Headline
 
 func buildChatMessage(headlines []models.Headline) []openai.ChatCompletionMessage {
 	systemMessage := `
-You will receive several news headlines formatted as JSON objects.
 
-Your task is to transform each headline into a queryable format and assign it to one of the predefined categories.
+You will receive several news headlines formatted as JSON objects.
+Your task is to transform each headline into a searchable, queryable version and assign it to the correct category from the list below.
 
 Instructions:
 
 Respond only with a valid JSON object. Do not include any additional text or commentary.
+Each output object must include the following fields:
 
-For each headline object, include the following fields:
+    - headline: The original headline exactly as provided.
+        - IMPORTANT: Convert all quotation marks (e.g., ", “, ”) to standard double quotes ("), and escape them using \". Escape any backslashes (\) as \\.
+        - Example input:
+            Her "official" title is “Top Coder”.
+            Must be output as:
+            "headline": "Her \"official\" title is \"Top Coder\"."
 
-- headline: The original headline as it was provided.
-    - **CRITICAL**: The string value for the 'headline' field must be a valid JSON string value.
-    - All forms of double quotation marks from the original headline (e.g., standard '"' (U+0022), left curly '“' (U+201C), right curly '”' (U+201D)) MUST be converted to standard double quotes ('"', U+0022) in the output string value.
-    - These standard double quotes ('"'), and any backslashes ('\'), that appear as part of the headline's text MUST then be properly escaped (e.g., '\"' for a quote, '\\' for a backslash).
-    - For example, if an input headline is 'Her "official" title is “Top Coder”.', it should be represented in the JSON as '"headline": "Her \"official\" title is \"Top Coder\"."'
+    - query: A concise, clean, and keyword-rich version of the headline that someone might type into a search engine to find the article.
+        - DO NOT simply copy and paste the headline.
+        - MUST contain a non-empty string.
+        - If no meaningful transformation is possible, fall back to the original headline.
+        - Use keywords, names, or summaries when possible.
+        - Examples:
+            - Headline: "OpenAI launches new GPT model with memory features"
+            Query: "OpenAI GPT model with memory features"
+            - Headline: "“We’re not in a recession,” says Treasury Secretary"
+            Query: "Treasury Secretary on recession status"
+            - Headline: "Taylor Swift drops new album 'Eclipse'"
+            Query: "Taylor Swift Eclipse album release"
 
-- query: A concise, clear, and searchable version of the headline.
-    - **CRITICAL**: This field MUST ALWAYS contain a non-empty string value. It MUST NOT be null.
-    - If a specific, searchable query cannot be reasonably formed from the headline, YOU MUST use the original headline text itself as the value for the 'query' field.
-    - DO NOT under any circumstances return an empty string (e.g., '""') or a null value for the 'query' field.
+    - category: One of the following categories (must match exactly):
+        - Technology
+        - Business & Finance
+        - Politics & World Affairs
+        - Entertainment & Pop Culture
+        - Health & Science
+        - Sports
+        - Lifestyle & Society
+        - Memes & Internet Trends
+        - Crime & Law
 
-- category: One of the following categories:
+    - id: Return the exact same id string as in the input.
 
-    Technology
+Expected JSON format:
 
-    Business & Finance
-
-    Politics & World Affairs
-
-    Entertainment & Pop Culture
-
-    Health & Science
-
-    Sports
-
-    Lifestyle & Society
-
-    Memes & Internet Trends
-
-    Crime & Law
-
-- id: Return the exact same ID that was received in the input.
-
-Expected JSON response format:
 {
   "headlines": [
     {
       "headline": "Original headline here",
-      "query": "Queryable version of the headline",
+      "query": "Rewritten, queryable version of the headline",
       "category": "One of the predefined categories",
       "id": "Same ID as provided"
     }
