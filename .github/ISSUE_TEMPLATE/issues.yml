@@ -1,0 +1,73 @@
+name: Request
+description: Use this to request a new feature or task
+title: "[Request] "
+labels:
+  - needs-triage
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🏷️ Label Guide
+
+        Choose the most appropriate label in the next field:
+
+        - `enhancement`: A new feature  
+        - `bug`: Something broken  
+        - `needs-triage`: Needs review  
+        - `backlog`: Not urgent  
+        - `blocked`: Waiting on something  
+        - `design-needed`: Needs design input  
+        - `documentation`: Needs docs  
+        - `high-priority`: Important and urgent  
+        - `low-priority`: Not important or urgent  
+        - `frontend`: UI or client-related  
+        - `backend`: API, DB, or server-side
+
+  - type: dropdown
+    id: label_choice
+    attributes:
+      label: Suggested Label
+      description: Select one (won't be auto-applied)
+      options:
+        - enhancement
+        - bug
+        - needs-triage
+        - backlog
+        - blocked
+        - design-needed
+        - documentation
+        - high-priority
+        - low-priority
+        - frontend
+        - backend
+    validations:
+      required: true
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Request
+      description: Describe what the goal or change is
+      placeholder: What we want...
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Any helpful implementation or context notes
+      placeholder: Details that pertain to completing the objective
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Write this in user-story form
+      placeholder: As a ___, I want ___ so that ___.
+    validations:
+      required: true
